@@ -1,0 +1,28 @@
+{# One booking row. Needs: b (booking dict), today_iso, back (url to return to after cancelling) #}
+{% macro booking_card(b, today_iso, back="/") %}
+{% set cancelled = b.status == 'cancelled' %}
+<article class="booking{{ ' is-cancelled' if cancelled }}">
+  <div class="b-time">{{ b.time }}</div>
+  <div class="b-main">
+    <div class="b-name">
+      <span class="strike">{{ b.name }}</span>
+      <span class="b-people strike">{{ b.people }} {{ 'persona' if b.people == 1 else 'persone' }}</span>
+    </div>
+    <div class="b-meta">
+      {% if b.source == 'manual' %}📞 {{ b.phone or 'Al telefono' }}{% else %}✈️ Telegram{% if b.username %} · @{{ b.username }}{% endif %}{% endif %}
+      · n. {{ b.id }}
+    </div>
+    {% if b.notes %}<div class="b-notes">📝 {{ b.notes }}</div>{% endif %}
+  </div>
+  <div class="b-side">
+    {% if cancelled %}
+      <span class="badge badge-cancelled">{{ 'Cancellata da te' if b.cancelled_by == 'owner' else 'Cancellata dal cliente' }}</span>
+    {% else %}
+      <span class="badge badge-ok">Confermata</span>
+      {% if b.date >= today_iso %}
+        <a class="btn btn-small btn-danger-outline" href="/bookings/{{ b.id }}/cancel?next={{ back | urlencode }}">Cancella</a>
+      {% endif %}
+    {% endif %}
+  </div>
+</article>
+{% endmacro %}

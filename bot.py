@@ -605,6 +605,9 @@ def owner_only(handler):
 def format_owner_booking(b) -> str:
     """One booking as seen by the owner: time, name, people, notes."""
     line = f"🕗 <b>{b['time']}</b> · {escape(b['name'])} · {b['people']} pers. <i>(n. {b['id']})</i>"
+    if b["source"] == "manual":
+        # Added from the dashboard, e.g. a phone call.
+        line += f"\n      📞 {escape(b['phone'] or 'al telefono')}"
     if b["notes"]:
         line += f"\n      📝 {escape(b['notes'])}"
     return line

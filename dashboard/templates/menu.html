@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Menù e orari{% endblock %}
+{% block content %}
+<h1>Menù e orari</h1>
+<p class="muted">Le modifiche sono visibili nel bot appena salvi, senza riavviarlo.</p>
+
+{% if errors %}
+<div class="flash flash-error">
+  <strong>Non ho salvato: correggi questi punti.</strong>
+  <ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<form method="post" action="/menu" class="menu-form">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+
+  <section class="card stack">
+    <h2>Il ristorante</h2>
+    <label>Nome
+      <input type="text" name="name" value="{{ form.name }}" required maxlength="80">
+    </label>
+    <label>Indirizzo
+      <input type="text" name="address" value="{{ form.address }}" required maxlength="150">
+    </label>
+    <div class="row">
+      <label>Telefono
+        <input type="tel" name="phone" value="{{ form.phone }}" maxlength="30">
+      </label>
+      <label>Link Google Maps
+        <input type="url" name="maps_url" value="{{ form.maps_url }}" placeholder="https://maps.google.com/...">
+      </label>
+    </div>
+  </section>
+
+  <section class="card stack">
+    <h2>Orari e prenotazioni</h2>
+    <label>Orari di apertura <span class="muted small">(una riga per riga, come li vedrà il cliente)</span>
+      <textarea name="opening_hours" rows="4" required>{{ form.opening_hours }}</textarea>
+    </label>
+    <fieldset>
+      <legend>Giorni di chiusura <span class="muted small">(non si potrà prenotare)</span></legend>
+      <div class="weekdays">
+        {% for n, day in form.weekdays %}
+          <label class="check">
+            <input type="checkbox" name="closed_weekdays" value="{{ n }}" {{ 'checked' if n in form.closed_weekdays }}>
+            {{ day | capitalize }}
+          </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <div class="row">
+      <label>Fasce orarie prenotabili <span class="muted small">(separate da virgola)</span>
+        <input type="text" name="booking_times" value="{{ form.booking_times }}" placeholder="19:30, 20:00, 20:30, 21:00" required>
+      </label>
+      <label class="narrow">Max persone online
+        <input type="number" name="max_people" value="{{ form.max_people }}" min="1" max="500" required inputmode="numeric">
+      </label>
+    </div>
+  </section>
+
+  <section class="stack">
+    <h2>Menù</h2>
+    <p class="muted small">
+      Per aggiungere un piatto compila una riga vuota. Per toglierlo spunta «Elimina».
+      Dopo il salvataggio compaiono nuove righe vuote.
+    </p>
+    <input type="hidden" name="cat_count" value="{{ form.categories | length }}">
+
+    {% for cat in form.categories %}
+      {% set i = loop.index0 %}
+      <fieldset class="card category{{ ' new-category' if cat.new }}">
+        <legend>{{ 'Nuova categoria' if cat.new else (cat.emoji ~ ' ' ~ cat.category) }}</legend>
+        <div class="row category-head">
+          <label class="narrow">Emoji
+            <input type="text" name="cat{{ i }}_emoji" value="{{ cat.emoji }}" maxlength="8">
+          </label>
+          <label>Nome categoria
+            <input type="text" name="cat{{ i }}_name" value="{{ cat.category }}" maxlength="50"
+                   placeholder="{{ 'es. Pizze' if cat.new }}">
+          </label>
+          {% if not cat.new %}
+          <label class="check danger">
+            <input type="checkbox" name="cat{{ i }}_delete" value="1"> Elimina categoria
+          </label>
+          {% endif %}
+        </div>
+
+        <input type="hidden" name="cat{{ i }}_item_count" value="{{ cat['items'] | length }}">
+        <div class="items">
+          {% for item in cat['items'] %}
+            {% set p = 'cat' ~ i ~ '_item' ~ loop.index0 ~ '_' %}
+            <div class="item{{ ' item-blank' if not item }}">
+              <label>Piatto
+                <input type="text" name="{{ p }}name" value="{{ item.name }}" maxlength="80"
+                       placeholder="{{ 'Nuovo piatto' if not item }}">
+              </label>
+              <label>Descrizione
+                <input type="text" name="{{ p }}desc" value="{{ item.description }}" maxlength="150">
+              </label>
+              <label class="price">Prezzo €
+                <input type="text" name="{{ p }}price" value="{{ item.price | price_input }}" inputmode="decimal" placeholder="0,00">
+              </label>
+              {% if item %}
+              <label class="check danger">
+                <input type="checkbox" name="{{ p }}delete" value="1"> Elimina
+              </label>
+              {% else %}
+              <span aria-hidden="true"></span>{# keeps the columns aligned #}
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      </fieldset>
+    {% endfor %}
+  </section>
+
+  <div class="save-bar">
+    <button type="submit" class="btn btn-primary">Salva modifiche</button>
+    <a href="/menu" class="btn btn-ghost">Annulla modifiche</a>
+  </div>
+</form>
+{% endblock %}

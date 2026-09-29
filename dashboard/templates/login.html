@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Accesso{% endblock %}
+{% block content %}
+<div class="login">
+  <h1>🍽 {{ restaurant_name }}</h1>
+  <p class="muted">Pannello del titolare</p>
+  <form method="post" action="/login" class="card stack">
+    {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
+    <label>Password
+      <input type="password" name="password" autocomplete="current-password" required autofocus>
+    </label>
+    <button type="submit" class="btn btn-primary">Entra</button>
+  </form>
+</div>
+{% endblock %}

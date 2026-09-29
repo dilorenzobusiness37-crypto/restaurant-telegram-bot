@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>{% block title %}Pannello{% endblock %} · {{ restaurant_name }}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  {% if authenticated %}
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <a class="brand" href="/">🍽 {{ restaurant_name }}</a>
+      <nav class="nav">
+        <a href="/" class="{{ 'active' if nav == 'bookings' }}">Prenotazioni</a>
+        <a href="/bookings/new" class="{{ 'active' if nav == 'new' }}">+ Nuova</a>
+        <a href="/menu" class="{{ 'active' if nav == 'menu' }}">Menù e orari</a>
+        <form method="post" action="/logout">
+          <button type="submit" class="nav-button">Esci</button>
+        </form>
+      </nav>
+    </div>
+  </header>
+  {% endif %}
+
+  <main class="wrap">
+    {% for kind, message in flashes %}
+      <div class="flash flash-{{ kind }}" role="status">{{ message }}</div>
+    {% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

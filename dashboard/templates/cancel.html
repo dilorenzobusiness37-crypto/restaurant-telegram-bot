@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Cancella prenotazione{% endblock %}
+{% block content %}
+<h1>Cancellare questa prenotazione?</h1>
+<div class="card">
+  <dl class="details">
+    <dt>Nome</dt><dd>{{ booking.name }}</dd>
+    <dt>Persone</dt><dd>{{ booking.people }}</dd>
+    <dt>Quando</dt><dd>{{ format_date(booking.date | todate) }} alle {{ booking.time }}</dd>
+    {% if booking.phone %}<dt>Telefono</dt><dd>{{ booking.phone }}</dd>{% endif %}
+    {% if booking.notes %}<dt>Note</dt><dd>{{ booking.notes }}</dd>{% endif %}
+    <dt>Numero</dt><dd>{{ booking.id }}</dd>
+  </dl>
+  <p class="muted">
+    {% if booking.source == 'manual' %}
+      È una prenotazione telefonica: dovrai avvisare tu il cliente.
+    {% else %}
+      Il cliente riceverà un messaggio su Telegram che lo avvisa della cancellazione.
+    {% endif %}
+  </p>
+  <form method="post" action="/bookings/{{ booking.id }}/cancel" class="actions">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="next" value="{{ next }}">
+    <button type="submit" class="btn btn-danger">Sì, cancella</button>
+    <a href="{{ next }}" class="btn btn-ghost">No, torna indietro</a>
+  </form>
+</div>
+{% endblock %}

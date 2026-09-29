@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% from "_booking.html" import booking_card %}
+{% block title %}Prenotazioni{% endblock %}
+{% block content %}
+
+<form method="get" action="/" class="filter">
+  <label for="day">Vai al giorno</label>
+  <input type="date" id="day" name="day" value="{{ selected.isoformat() if selected else '' }}" required>
+  <button type="submit" class="btn">Mostra</button>
+  {% if selected %}<a href="/" class="btn btn-ghost">Oggi e prossimi 7 giorni</a>{% endif %}
+</form>
+
+{% if selected %}
+  {# ---- Single day (date filter) ---- #}
+  {% set back = '/?day=' ~ selected.isoformat() %}
+  <section class="day-section highlight">
+    <header class="section-head">
+      <h1>{{ format_date(selected) | capitalize }}{% if selected == today %} <span class="pill">oggi</span>{% endif %}</h1>
+      <p class="totals"><strong>{{ stats.covers }}</strong> coperti · {{ stats.count }} prenotazioni</p>
+    </header>
+    {% if selected.weekday() in closed_weekdays %}<p class="muted">Giorno di chiusura.</p>{% endif %}
+    {% for b in bookings %}{{ booking_card(b, today_iso, back) }}{% else %}
+      <p class="empty">Nessuna prenotazione per questo giorno.</p>
+    {% endfor %}
+  </section>
+
+{% else %}
+  {# ---- Today ---- #}
+  <section class="day-section highlight">
+    <header class="section-head">
+      <h1>Oggi <span class="muted small">{{ format_date(today) }}</span></h1>
+      <p class="totals"><strong>{{ stats.covers }}</strong> coperti · {{ stats.count }} prenotazioni</p>
+    </header>
+    {% if today.weekday() in closed_weekdays %}<p class="muted">Oggi è giorno di chiusura.</p>{% endif %}
+    {% for b in bookings %}{{ booking_card(b, today_iso, '/') }}{% else %}
+      <p class="empty">Nessuna prenotazione per oggi.</p>
+    {% endfor %}
+  </section>
+
+  {# ---- Next 7 days ---- #}
+  <section>
+    <header class="section-head">
+      <h2>Prossimi 7 giorni</h2>
+      <p class="totals"><strong>{{ week_stats.covers }}</strong> coperti · {{ week_stats.count }} prenotazioni</p>
+    </header>
+    {% for day in days %}
+      <div class="day-section">
+        <header class="day-head">
+          <h3><a href="/?day={{ day.date.isoformat() }}">{{ format_date(day.date) | capitalize }}</a></h3>
+          {% if day.date.weekday() in closed_weekdays %}
+            <span class="muted small">chiuso</span>
+          {% else %}
+            <span class="totals small"><strong>{{ day.stats.covers }}</strong> coperti</span>
+          {% endif %}
+        </header>
+        {% for b in day.bookings %}{{ booking_card(b, today_iso, '/') }}{% else %}
+          {% if day.date.weekday() not in closed_weekdays %}<p class="empty small">Nessuna prenotazione.</p>{% endif %}
+        {% endfor %}
+      </div>
+    {% endfor %}
+  </section>
+{% endif %}
+{% endblock %}

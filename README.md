@@ -1,6 +1,6 @@
 # Restaurant Telegram Bot
 
-A Telegram bot for restaurants: customers can browse the menu, check opening hours and book a table in a few taps. The owner gets a Telegram message for every new or cancelled booking.
+A Telegram bot for restaurants: customers can browse the menu, check opening hours and book a table in a few taps. The owner gets a Telegram message for every new or cancelled booking, and has a web dashboard to manage bookings, menu and opening hours.
 
 The bot talks to customers in Italian. Code and docs are in English.
 
@@ -17,12 +17,13 @@ The bot talks to customers in Italian. Code and docs are in English.
 - **My bookings**: customers see their upcoming bookings and can cancel them (with a confirmation step)
 - **Clear replies to unexpected input**: stickers, photos, random text or unknown commands get a helpful answer instead of silence
 - Bookings stored in a local **SQLite** database (`bookings.db`, created automatically)
+- **Owner dashboard** (web, works on phones): today's bookings, next 7 days, manual bookings for phone calls, cancellations with a Telegram message to the customer, and a menu/opening hours editor. See [Owner dashboard](#owner-dashboard)
 
 ## Screenshots
 
-| Main menu | Booking | Owner notification |
-|---|---|---|
-| ![Main menu](docs/screenshot-start.png) | ![Booking](docs/screenshot-booking.png) | ![Owner notification](docs/screenshot-owner.png) |
+| Main menu | Menu | Booking | Owner notification |
+|---|---|---|---|
+| ![Main menu](docs/screenshot-start.png) | ![Menu](docs/screenshot-menu.png) | ![Booking](docs/screenshot-booking.png) | ![Owner notification](docs/screenshot-owner.png) |
 
 ## Installation
 
@@ -44,6 +45,39 @@ python bot.py
 
 The owner must have sent at least one message to the bot, otherwise Telegram does not let the bot write to them.
 
+## Owner dashboard
+
+![Owner dashboard](docs/screenshot-dashboard.png)
+
+A small web panel for the restaurant owner, built with FastAPI and plain HTML/CSS. It uses the same `bookings.db` and `menu.json` as the bot, so the two always agree.
+
+- **Bookings**: today's bookings at the top (name, party size, time, notes, status), then the next 7 days grouped by day with total covers. Pick any date with the date filter. Cancelled bookings are shown struck through.
+- **Cancel a booking** (with a confirmation page). If the booking came from Telegram, the customer automatically gets a message from the bot. For phone bookings the dashboard reminds you to call the customer.
+- **Add a booking by hand**, e.g. for customers who phone. It also appears in the bot's `/oggi` and `/settimana` with a 📞 icon.
+- **Menù e orari**: edit name, address, phone, opening hours, closed days, bookable time slots, and add/edit/delete dishes and categories. Input is validated before saving, and the bot uses the new `menu.json` immediately, with no restart.
+
+### Setting the password
+
+Add a password to `.env`:
+
+```
+DASHBOARD_PASSWORD=choose-a-long-password
+```
+
+The dashboard refuses to start without it (or with the example value `change-me`). Changing the password logs out every open session.
+
+### Starting it
+
+The dashboard runs separately from the bot. Open a second terminal with the virtual environment active:
+
+```bash
+python -m dashboard
+```
+
+Then open http://localhost:8000 and log in.
+
+To use it from a phone on the same Wi-Fi, set `DASHBOARD_HOST=0.0.0.0` in `.env` and open `http://<computer-ip>:8000` on the phone. Over the internet, put it behind HTTPS (e.g. a reverse proxy) so the password and the session cookie are encrypted.
+
 ## Configuration
 
 ### `.env`
@@ -53,10 +87,13 @@ The owner must have sent at least one message to the bot, otherwise Telegram doe
 | `TELEGRAM_TOKEN` | yes | Bot token from @BotFather |
 | `OWNER_CHAT_ID` | no | Chat that receives booking notifications |
 | `TIMEZONE` | no | Default `Europe/Rome`; used for "today" and past time slots |
+| `DASHBOARD_PASSWORD` | for the dashboard | Password to log in to the owner dashboard |
+| `DASHBOARD_HOST` | no | Default `127.0.0.1`; `0.0.0.0` to reach it from other devices |
+| `DASHBOARD_PORT` | no | Default `8000` |
 
 ### Changing the menu
 
-Edit the `menu` section of `menu.json`. Each category has a name, an emoji and a list of dishes:
+The easiest way is the **Menù e orari** page of the [owner dashboard](#owner-dashboard). You can also edit the `menu` section of `menu.json`. Each category has a name, an emoji and a list of dishes:
 
 ```json
 {
@@ -74,7 +111,7 @@ You can add, remove or reorder categories and dishes. `description` can be an em
 
 ### Changing opening hours, address and time slots
 
-Edit the `restaurant` section of `menu.json`:
+Use the dashboard, or edit the `restaurant` section of `menu.json`:
 
 | Field | What it does |
 |---|---|
@@ -90,7 +127,12 @@ Tip: check the file with a JSON validator (e.g. jsonlint.com) after editing.
 
 ```
 bot.py            # Telegram handlers and booking conversation
-database.py       # SQLite storage for bookings
+database.py       # SQLite storage for bookings (shared by bot and dashboard)
+dashboard/        # Owner web dashboard (python -m dashboard)
+  app.py          #   routes: login, bookings, manual booking, cancel, menu editor
+  menu_editor.py  #   menu form parsing, validation and saving to menu.json
+  templates/      #   Jinja2 HTML templates
+  static/         #   style.css
 menu.json         # Menu, opening hours, address, time slots
 requirements.txt
 .env.example      # Template for .env (the real .env is git-ignored)
@@ -121,7 +163,7 @@ These work only in the chat whose id matches `OWNER_CHAT_ID`. Anyone else gets "
 ## Possible extensions
 
 - **WhatsApp version** via the Meta Cloud API, reusing the same booking logic and database
-- **Web dashboard for the owner** to view, edit and export bookings
+- **More dashboard features**: export bookings to CSV/Excel, statistics on covers and no-shows
 - **AI answers to free-text questions** such as allergens, dishes and availability
 - **Automatic reminder** sent to the customer the day before the booking
 - **Booking form on the restaurant website**, saving to the same database and triggering the same owner notifications
