@@ -1,115 +1,167 @@
 {% extends "base.html" %}
-{% from "_booking.html" import register %}
+{% from "_booking.html" import register, avatar_badge, flags %}
 {% block title %}{{ 'Oggi' if not selected else format_date(selected) | capitalize }}{% endblock %}
 {% block content %}
 {% set day = selected or today %}
 {% set is_today = day == today %}
 {% set now = now_hm() %}
-{% set confirmed = bookings | selectattr('status', 'eq', 'confirmed') | list %}
-{% set upcoming = confirmed | selectattr('time', 'ge', now) | list if is_today else confirmed %}
 {% set back = '/?day=' ~ day.isoformat() if selected else '/' %}
+{% set closed_day = day.weekday() in closed_weekdays %}
 
-<div class="board">
-  <div class="tonight">
+<div class="board" id="board">
+  <div class="board-main">
+
     {# ---- The number that matters ---- #}
     <section class="service on-dark" aria-labelledby="service-title">
-      <p class="service-date">{{ format_date(day) | capitalize }}</p>
+      {% if not is_today %}<p class="service-date">{{ format_date(day) | capitalize }}</p>{% endif %}
       <h1 class="service-headline" id="service-title">
         {% if is_today %}<span class="service-label">{{ 'Stasera' if now >= '15:00' else 'Oggi' }}</span>{% endif %}
         <span class="service-count">{{ stats.covers }}</span>
-        <span class="service-unit">{{ 'coperto' if stats.covers == 1 else 'coperti' }}{{ '' if is_today else ' prenotati' }}</span>
+        <span class="service-unit">{{ 'coperto' if stats.covers == 1 else 'coperti' }}{% if room.capacity %} <span class="service-of">su {{ room.capacity }} posti</span>{% endif %}</span>
       </h1>
+
+      {% if room.capacity %}
+        {% set peak_pct = room.peak_pct or 0 %}
+        <div class="fill" aria-hidden="true"><span style="width: {{ [peak_pct, 100] | min }}%"></span></div>
+      {% endif %}
+
       <p class="service-summary">
-        {% if not stats.count %}
+        {% if closed_day and not stats.count %}
+          Giorno di chiusura.
+        {% elif not stats.count %}
           Nessuna prenotazione{{ ' per ora' if is_today }}.
         {% else %}
           {{ stats.count }} {{ 'prenotazione' if stats.count == 1 else 'prenotazioni' }}.
-          {% if is_today %}
-            {% if upcoming %}
-              {% set next_one = upcoming | first %}
-              Prossimo arrivo alle <strong>{{ next_one.time }}</strong>, {{ next_one.name }}.
-            {% else %}
-              Sono già tutti arrivati.
-            {% endif %}
+          {% if room.peak and room.capacity %}
+            Picco alle <strong>{{ room.peak.time }}</strong> con la sala piena al <strong>{{ room.peak_pct }}%</strong>.
+          {% elif room.peak %}
+            Picco alle <strong>{{ room.peak.time }}</strong>.
           {% endif %}
         {% endif %}
       </p>
 
-      {% if confirmed %}
-        {# Covers per time slot: tells the kitchen when the rush comes #}
-        {% set times = (booking_slots() + confirmed | map(attribute='time') | list) | unique | sort %}
-        {% set ns = namespace(peak=0) %}
-        {% for t in times %}{% set c = confirmed | selectattr('time', 'eq', t) | sum(attribute='people') %}{% if c > ns.peak %}{% set ns.peak = c %}{% endif %}{% endfor %}
-        <div class="rhythm" role="list" aria-label="Coperti per orario">
-          {% for t in times %}
-            {% set c = confirmed | selectattr('time', 'eq', t) | sum(attribute='people') %}
-            <div class="rhythm-slot{{ ' is-peak' if c == ns.peak }}" role="listitem">
-              <span class="rhythm-covers">{{ c if c else '' }}</span>
-              <span class="rhythm-bar" aria-hidden="true"><span style="height: {{ (c / ns.peak * 100) | round | int }}%"></span></span>
-              <span class="rhythm-time">{{ t }}<span class="visually-hidden">: {{ c }} coperti</span></span>
-            </div>
-          {% endfor %}
-        </div>
+      {% if summary %}
+        <ul class="summary" aria-label="Da sapere">
+          {% for kind, label in summary %}<li class="summary-item summary-{{ kind }}">{{ label }}</li>{% endfor %}
+        </ul>
       {% endif %}
 
       {% if selected %}<a class="service-back" href="/">Torna a oggi</a>{% endif %}
     </section>
 
+    {# ---- Next arrivals, with countdown ---- #}
+    {% if is_today and stats.count %}
+    <section class="block" aria-labelledby="next-title">
+      <h2 id="next-title" class="block-title">In arrivo</h2>
+      {% if next_arrivals %}
+        <ol class="next">
+          {% for b in next_arrivals %}
+            {% set wait = b.time | minutes_until %}
+            <li class="next-item{{ ' is-imminent' if wait <= 15 }}">
+              <span class="next-time num">{{ b.time }}</span>
+              {{ avatar_badge(b.name, 'lg') }}
+              <div class="next-main">
+                <p class="next-name">{{ b.name }}</p>
+                <p class="next-meta">
+                  {{ b.people }} {{ 'persona' if b.people == 1 else 'persone' }},
+                  {% if wait <= 0 %}adesso{% elif wait < 60 %}tra {{ wait }} min{% else %}tra {{ wait // 60 }} h {{ '%02d' | format(wait % 60) }}{% endif %}
+                </p>
+                {% if b.notes and b.notes | note_tags %}<p class="next-flags">{{ flags(b.notes) }}</p>{% endif %}
+              </div>
+            </li>
+          {% endfor %}
+        </ol>
+      {% else %}
+        <p class="quiet">Sono arrivati tutti. Nessun altro arrivo per stasera.</p>
+      {% endif %}
+    </section>
+    {% endif %}
+
     {# ---- Who is coming, in order ---- #}
-    <div class="register-head">
-      <h2>Arrivi</h2>
-      {% if bookings %}<a href="/bookings/new" class="link-plain muted">Aggiungi prenotazione</a>{% endif %}
-    </div>
-
-    {% if bookings %}
-      {{ register(bookings, today_iso, back, live=is_today) }}
-    {% else %}
-      <div class="empty">
-        <p>{{ 'Ancora nessuna prenotazione per stasera.' if is_today else 'Nessuna prenotazione per questo giorno.' }}</p>
-        <p class="muted">{{ 'Se qualcuno telefona, segnalo qui: lo vedrai anche nel bot.' if is_today else 'Chi prenota al telefono puoi segnarlo qui.' }}</p>
-        <a href="/bookings/new" class="btn">Aggiungi prenotazione</a>
+    <section class="block" aria-labelledby="register-title">
+      <div class="block-head">
+        <h2 id="register-title" class="block-title">Arrivi</h2>
+        {% if bookings %}<a href="/bookings/new" class="link-plain">Aggiungi prenotazione</a>{% endif %}
       </div>
-    {% endif %}
 
-    {% if selected %}
-      {% include "_goto.html" %}
-    {% endif %}
+      {% if bookings %}
+        {{ register(bookings, today_iso, back, live=is_today, highlight_id=highlight_id) }}
+      {% else %}
+        <div class="empty">
+          <p>{{ 'Ancora nessuna prenotazione per stasera.' if is_today else 'Nessuna prenotazione per questo giorno.' }}</p>
+          <p class="muted">{{ 'Se qualcuno telefona, segnalo qui: lo vedrai anche nel bot.' if is_today else 'Chi prenota al telefono puoi segnarlo qui.' }}</p>
+          <a href="/bookings/new" class="btn">Aggiungi prenotazione</a>
+        </div>
+      {% endif %}
+    </section>
   </div>
 
-  {% if not selected %}
-  {# ---- The week ahead ---- #}
-  <aside class="week" aria-labelledby="week-title">
-    <div class="week-head">
-      <h2 id="week-title">Prossimi 7 giorni</h2>
-      <p class="week-total"><strong class="num">{{ week_stats.covers }}</strong> coperti</p>
-    </div>
-    {% set wk = namespace(peak=1) %}
-    {% for d in days %}{% if d.stats.covers > wk.peak %}{% set wk.peak = d.stats.covers %}{% endif %}{% endfor %}
-    {% for d in days %}
-      {% set parts = format_date(d.date).split(' ') %}
-      {% set closed = d.date.weekday() in closed_weekdays %}
-      <details class="day">
-        <summary>
-          <span class="day-name">{{ parts[0] | capitalize }}<small>{{ parts[1] }} {{ parts[2] }}</small></span>
-          {% if closed and not d.bookings %}
-            <span class="day-closed">Chiuso</span><span></span>
-          {% else %}
-            <span class="day-bar" aria-hidden="true"><span style="width: {{ (d.stats.covers / wk.peak * 100) | round | int }}%"></span></span>
-            <span class="day-covers">{{ d.stats.covers }} <small>{{ 'coperto' if d.stats.covers == 1 else 'coperti' }}</small></span>
-          {% endif %}
-        </summary>
-        <div class="day-body">
-          {% if d.bookings %}
-            {{ register(d.bookings, today_iso, '/') }}
-          {% else %}
-            <p class="day-empty">{{ 'Giorno di chiusura.' if closed else 'Nessuna prenotazione.' }}</p>
-          {% endif %}
-          <a class="day-link" href="/?day={{ d.date.isoformat() }}">Apri {{ parts[0] }} {{ parts[1] }}</a>
-        </div>
-      </details>
-    {% endfor %}
+  <aside class="board-side">
+    {# ---- How full the room is, slot by slot ---- #}
+    <section class="block" aria-labelledby="room-title">
+      <div class="block-head">
+        <h2 id="room-title" class="block-title">Sala per orario</h2>
+        {% if room.tables %}<span class="block-note">{{ room.tables }} tavoli</span>{% endif %}
+      </div>
+      <ol class="room">
+        {% for s in room.slots %}
+          <li class="room-slot{{ ' is-now' if s.is_now }}{{ ' is-full' if s.full }}">
+            <span class="room-time num">{{ s.time }}</span>
+            <span class="room-bar" aria-hidden="true"><span style="width: {{ s.pct }}%"></span></span>
+            <span class="room-covers num"><strong>{{ s.covers }}</strong>{% if room.capacity %}<span>/{{ room.capacity }}</span>{% endif %}</span>
+            <span class="room-detail">
+              {%- if s.full %}Sala piena
+              {%- elif s.tables_free is not none %}{{ s.tables_free }} {{ 'tavolo libero' if s.tables_free == 1 else 'tavoli liberi' }}
+              {%- endif %}
+              {%- if s.arriving %}{{ ', ' if s.full or s.tables_free is not none }}{{ s.arriving }} in arrivo{% endif -%}
+              {%- if s.is_now %} <span class="now-tag">adesso</span>{% endif -%}
+            </span>
+          </li>
+        {% endfor %}
+      </ol>
+      {% if room.capacity %}
+        <p class="block-hint">Stima: ogni prenotazione occupa un tavolo per {{ room.turn_label }}.</p>
+      {% else %}
+        <p class="block-hint"><a href="/settings">Imposta i posti in sala</a> per vedere quanto è piena a ogni orario.</p>
+      {% endif %}
+    </section>
+
+    {% if not selected %}
+    {# ---- The week ahead ---- #}
+    <section class="block week" aria-labelledby="week-title">
+      <div class="block-head">
+        <h2 id="week-title" class="block-title">Prossimi 7 giorni</h2>
+        <span class="block-note"><strong class="num">{{ week_stats.covers }}</strong> coperti</span>
+      </div>
+      {% set wk = namespace(peak=1) %}
+      {% for d in days %}{% if d.stats.covers > wk.peak %}{% set wk.peak = d.stats.covers %}{% endif %}{% endfor %}
+      {% for d in days %}
+        {% set parts = format_date(d.date).split(' ') %}
+        {% set closed = d.date.weekday() in closed_weekdays %}
+        <details class="day">
+          <summary>
+            <span class="day-name">{{ parts[0] | capitalize }}<small>{{ parts[1] }} {{ parts[2] }}</small></span>
+            {% if closed and not d.bookings %}
+              <span class="day-closed">Chiuso</span><span></span>
+            {% else %}
+              <span class="day-bar" aria-hidden="true"><span style="width: {{ (d.stats.covers / wk.peak * 100) | round | int }}%"></span></span>
+              <span class="day-covers num">{{ d.stats.covers }} <small>{{ 'coperto' if d.stats.covers == 1 else 'coperti' }}</small></span>
+            {% endif %}
+          </summary>
+          <div class="day-body">
+            {% if d.bookings %}
+              {{ register(d.bookings, today_iso, '/') }}
+            {% else %}
+              <p class="day-empty">{{ 'Giorno di chiusura.' if closed else 'Nessuna prenotazione.' }}</p>
+            {% endif %}
+            <a class="day-link" href="/?day={{ d.date.isoformat() }}">Apri {{ parts[0] }} {{ parts[1] }}</a>
+          </div>
+        </details>
+      {% endfor %}
+    </section>
+    {% endif %}
+
     {% include "_goto.html" %}
   </aside>
-  {% endif %}
 </div>
 {% endblock %}

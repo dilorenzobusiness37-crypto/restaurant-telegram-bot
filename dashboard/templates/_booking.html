@@ -1,11 +1,23 @@
-{# The booking register: arrivals in time order, grouped by time slot.
-   live=True marks past slots and draws the "Adesso" line (today only). #}
+{# The booking register: confirmed arrivals in time order, grouped by time slot,
+   then the cancelled ones folded away at the end.
+   live=True fades past slots and draws the "Adesso" line (today only). #}
 
-{% macro arrival(b, today_iso, back) %}
+{% macro avatar_badge(name, size='') %}
+{% set av = name | avatar %}
+<span class="avatar tone-{{ av.tone }}{{ ' avatar-' ~ size if size }}" aria-hidden="true">{{ av.initials }}</span>
+{% endmacro %}
+
+{% macro flags(notes) %}
+{% set tags = notes | note_tags %}
+{% if tags %}<span class="flags">{% for t in tags %}<span class="flag flag-{{ t | lower }}">{{ t }}</span>{% endfor %}</span>{% endif %}
+{% endmacro %}
+
+{% macro arrival(b, today_iso, back, highlight_id=None, show_time=False) %}
 {% set cancelled = b.status == 'cancelled' %}
-<div class="arrival{{ ' is-cancelled' if cancelled }}">
-  <p class="arrival-name">{{ b.name }}</p>
-  <p class="arrival-people"><strong>{{ b.people }}</strong><span>{{ 'persona' if b.people == 1 else 'persone' }}</span></p>
+<div class="arrival{{ ' is-cancelled' if cancelled }}{{ ' just-saved' if b.id == highlight_id }}" data-booking="{{ b.id }}">
+  {{ avatar_badge(b.name) }}
+  <p class="arrival-name">{% if show_time %}<span class="arrival-time num">{{ b.time }}</span> {% endif %}{{ b.name }}</p>
+  <p class="arrival-people"><strong class="num">{{ b.people }}</strong> {{ 'persona' if b.people == 1 else 'persone' }}</p>
   <p class="arrival-source">
     {%- if cancelled -%}
       <span class="status-cancelled">{{ 'Cancellata da te' if b.cancelled_by == 'owner' else 'Cancellata dal cliente' }}</span>
@@ -16,38 +28,44 @@
     {%- endif -%}
   </p>
   {% if b.notes %}
-    {% set tags = b.notes | note_tags %}
-    <p class="arrival-note">
-      {%- if tags and not cancelled %}<span class="flags">{% for t in tags %}<span class="flag flag-{{ t | lower }}">{{ t }}</span>{% endfor %}</span>{% endif -%}
-      {{ b.notes }}
-    </p>
+    <p class="arrival-note">{% if not cancelled %}{{ flags(b.notes) }}{% endif %}{{ b.notes }}</p>
   {% endif %}
   {% if not cancelled and b.date >= today_iso %}
     <div class="arrival-actions">
-      <a class="link-danger" href="/bookings/{{ b.id }}/cancel?next={{ back | urlencode }}">Cancella<span class="visually-hidden"> la prenotazione di {{ b.name }} alle {{ b.time }}</span></a>
+      <a class="link-danger" href="/bookings/{{ b.id }}/cancel?next={{ back | urlencode }}"
+         data-cancel-url="/bookings/{{ b.id }}/cancel" data-name="{{ b.name }}">Cancella<span class="visually-hidden"> la prenotazione di {{ b.name }} alle {{ b.time }}</span></a>
     </div>
   {% endif %}
 </div>
 {% endmacro %}
 
-{% macro register(bookings, today_iso, back='/', live=False) %}
+{% macro register(bookings, today_iso, back='/', live=False, highlight_id=None) %}
 {% set now = now_hm() %}
+{% set active = bookings | selectattr('status', 'eq', 'confirmed') | list %}
+{% set cancelled = bookings | rejectattr('status', 'eq', 'confirmed') | list %}
 {% set ns = namespace(now_drawn=not live) %}
+{% if active %}
 <ol class="register">
-  {% for group in bookings | groupby('time') %}
+  {% for group in active | groupby('time') %}
     {% set past = live and group.grouper < now %}
     {% if not ns.now_drawn and not past %}
       {% if not loop.first %}<li class="now-line"><span>Adesso {{ now }}</span></li>{% endif %}
       {% set ns.now_drawn = True %}
     {% endif %}
-    {% set confirmed = group.list | selectattr('status', 'eq', 'confirmed') | list %}
-    <li class="slot{{ ' is-past' if past }}{{ ' is-all-cancelled' if not confirmed }}">
-      <div class="slot-time">{{ group.grouper }}</div>
+    <li class="slot{{ ' is-past' if past }}">
+      <div class="slot-time num">{{ group.grouper }}</div>
       <div class="slot-bookings">
-        {% for b in group.list | sort(attribute='status', reverse=True) %}{{ arrival(b, today_iso, back) }}{% endfor %}
+        {% for b in group.list %}{{ arrival(b, today_iso, back, highlight_id) }}{% endfor %}
       </div>
     </li>
     {% if loop.last and not ns.now_drawn %}<li class="now-line"><span>Adesso {{ now }}</span></li>{% endif %}
   {% endfor %}
 </ol>
+{% endif %}
+{% if cancelled %}
+<details class="cancelled-list">
+  <summary>{{ cancelled | length }} {{ 'prenotazione cancellata' if cancelled | length == 1 else 'prenotazioni cancellate' }}</summary>
+  {% for b in cancelled %}{{ arrival(b, today_iso, back, show_time=True) }}{% endfor %}
+</details>
+{% endif %}
 {% endmacro %}

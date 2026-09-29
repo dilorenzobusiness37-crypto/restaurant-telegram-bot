@@ -13,12 +13,12 @@
 </div>
 {% endif %}
 
-<form method="post" action="/menu" id="menu-form">
+<form method="post" action="/menu" id="menu-form" class="menu-layout">
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <input type="hidden" name="cat_count" value="{{ form.categories | length }}">
 
   {# ---------------- Menu sheets ---------------- #}
-  <section class="menu-section" aria-labelledby="menu-title">
+  <section class="menu-section menu-sheets" aria-labelledby="menu-title">
     <h2 id="menu-title">Piatti e prezzi</h2>
     <p class="hint">Per aggiungere un piatto scrivi nella riga vuota in fondo alla categoria.</p>
 
@@ -31,13 +31,13 @@
           <summary>Aggiungi una categoria</summary>
       {% endif %}
 
-      <div class="sheet">
+      <div class="sheet" data-sheet>
         <div class="sheet-head">
-          <input type="text" class="emoji" name="cat{{ i }}_emoji" value="{{ cat.emoji }}" maxlength="8" aria-label="Emoji di {{ label }}">
-          <input type="text" name="cat{{ i }}_name" value="{{ cat.category }}" maxlength="50" aria-label="Nome categoria"
+          <input type="text" class="emoji" name="cat{{ i }}_emoji" value="{{ cat.emoji }}" maxlength="8" aria-label="Emoji di {{ label }}" data-role="emoji">
+          <input type="text" name="cat{{ i }}_name" value="{{ cat.category }}" maxlength="50" aria-label="Nome categoria" data-role="category"
                  {% if cat.new %}placeholder="Nome, per esempio Pizze"{% endif %}>
           {% if not cat.new %}
-            <label class="del-toggle"><input type="checkbox" name="cat{{ i }}_delete" value="1"> Elimina</label>
+            <label class="del-toggle"><input type="checkbox" name="cat{{ i }}_delete" value="1" data-role="delete-category"> Elimina</label>
           {% else %}<span></span>{% endif %}
         </div>
 
@@ -46,21 +46,21 @@
         {% for item in cat['items'] %}
           {% set p = 'cat' ~ i ~ '_item' ~ loop.index0 ~ '_' %}
           {% set dish = item.name or 'nuovo piatto' %}
-          <div class="row{{ ' is-blank' if not item }}">
+          <div class="row{{ ' is-blank' if not item }}" data-row>
             <div class="cell-name">
-              <input type="text" name="{{ p }}name" value="{{ item.name }}" maxlength="80" aria-label="Piatto"
+              <input type="text" name="{{ p }}name" value="{{ item.name }}" maxlength="80" aria-label="Piatto" data-role="name"
                      {% if not item %}placeholder="Aggiungi un piatto"{% endif %}>
             </div>
             <div class="cell-desc">
               <input type="text" name="{{ p }}desc" value="{{ item.description }}" maxlength="150" aria-label="Descrizione di {{ dish }}"
-                     placeholder="Descrizione">
+                     placeholder="Descrizione" data-role="desc">
             </div>
             <div class="cell-price">
               <input type="text" name="{{ p }}price" value="{{ item.price | price_input }}" inputmode="decimal" aria-label="Prezzo di {{ dish }} in euro"
-                     {% if not item %}placeholder="0,00"{% endif %}>
+                     data-role="price" {% if not item %}placeholder="0,00"{% endif %}>
             </div>
             <div class="cell-del">
-              {% if item %}<label class="del-toggle"><input type="checkbox" name="{{ p }}delete" value="1"> Elimina<span class="visually-hidden"> {{ dish }}</span></label>{% endif %}
+              {% if item %}<label class="del-toggle"><input type="checkbox" name="{{ p }}delete" value="1" data-role="delete"> Elimina<span class="visually-hidden"> {{ dish }}</span></label>{% endif %}
             </div>
           </div>
         {% endfor %}
@@ -70,15 +70,28 @@
     {% endfor %}
   </section>
 
+  {# ---------------- What the customer sees ---------------- #}
+  <aside class="preview" aria-labelledby="preview-title">
+    <div class="preview-head">
+      <h2 id="preview-title">Come lo vede il cliente</h2>
+      <p class="hint">Il messaggio del bot, aggiornato mentre scrivi.</p>
+    </div>
+    <div class="chat">
+      <div class="bubble" id="preview" data-restaurant="{{ restaurant_name }}">
+        <noscript>L'anteprima ha bisogno di JavaScript.</noscript>
+      </div>
+    </div>
+  </aside>
+
   {# ---------------- Opening hours and bookings ---------------- #}
-  <section class="menu-section" aria-labelledby="hours-title">
+  <section class="menu-section menu-hours" aria-labelledby="hours-title">
     <h2 id="hours-title">Orari e prenotazioni</h2>
-    <div class="settings-grid" style="margin-top: 16px">
+    <div class="settings-grid">
       <label class="field span-2">
         <span class="field-label">Orari di apertura <small>una riga per riga, come li leggerà il cliente</small></span>
         <textarea name="opening_hours" rows="4" required>{{ form.opening_hours }}</textarea>
       </label>
-      <fieldset class="field span-2" style="border: 0; padding: 0; margin: 0 0 20px">
+      <fieldset class="field span-2 plain-fieldset">
         <legend class="field-label">Giorni di chiusura <small>in questi giorni non si può prenotare</small></legend>
         <div class="days">
           {% for n, day in form.weekdays %}
@@ -100,33 +113,10 @@
     </div>
   </section>
 
-  {# ---------------- Restaurant ---------------- #}
-  <section class="menu-section" aria-labelledby="place-title">
-    <h2 id="place-title">Il locale</h2>
-    <div class="settings-grid" style="margin-top: 16px">
-      <label class="field">
-        <span class="field-label">Nome</span>
-        <input type="text" name="name" value="{{ form.name }}" required maxlength="80">
-      </label>
-      <label class="field">
-        <span class="field-label">Telefono</span>
-        <input type="tel" name="phone" value="{{ form.phone }}" maxlength="30">
-      </label>
-      <label class="field span-2">
-        <span class="field-label">Indirizzo</span>
-        <input type="text" name="address" value="{{ form.address }}" required maxlength="150">
-      </label>
-      <label class="field span-2">
-        <span class="field-label">Link a Google Maps</span>
-        <input type="url" name="maps_url" value="{{ form.maps_url }}" placeholder="https://maps.google.com/...">
-      </label>
-    </div>
-  </section>
-
   <div class="save-bar">
     <div class="page save-bar-inner">
-      <span class="save-state" id="save-state" role="status">{{ 'Modifiche non salvate' if errors else 'Tutto salvato' }}</span>
-      <div style="display: flex; gap: 8px">
+      <span class="save-state{{ ' is-dirty' if errors }}" id="save-state" role="status">{{ 'Modifiche non salvate' if errors else 'Tutto salvato' }}</span>
+      <div class="save-actions">
         <a href="/menu" class="btn btn-secondary" id="discard" {% if not errors %}hidden{% endif %}>Annulla</a>
         <button type="submit" class="btn">Salva menù</button>
       </div>
@@ -136,33 +126,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-  // Tell the owner there is something to save, and warn before leaving with unsaved changes.
-  (function () {
-    var form = document.getElementById("menu-form");
-    var state = document.getElementById("save-state");
-    var discard = document.getElementById("discard");
-    var dirty = {{ 'true' if errors else 'false' }};
-    function mark() {
-      dirty = true;
-      state.textContent = "Modifiche non salvate";
-      state.classList.add("is-dirty");
-      discard.hidden = false;
-    }
-    if (dirty) state.classList.add("is-dirty");
-    form.addEventListener("input", mark);
-    form.addEventListener("change", mark);
-    form.addEventListener("submit", function () { dirty = false; });
-    discard.addEventListener("click", function () { dirty = false; });
-    window.addEventListener("beforeunload", function (e) { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
-    // Enter in a cell saves nothing by accident: move to the next field instead.
-    form.addEventListener("keydown", function (e) {
-      if (e.key !== "Enter" || e.target.tagName !== "INPUT") return;
-      e.preventDefault();
-      var fields = Array.prototype.slice.call(form.querySelectorAll("input[type=text], input[type=number], input[type=tel], input[type=url]"));
-      var next = fields[fields.indexOf(e.target) + 1];
-      if (next) { next.focus(); next.select(); }
-    });
-  })();
-</script>
+<script src="/static/menu.js" defer data-dirty="{{ 'true' if errors else 'false' }}"></script>
 {% endblock %}

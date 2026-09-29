@@ -5,7 +5,11 @@
 {% block main_class %}login{% endblock %}
 {% block flashes %}{% endblock %}
 {% block content %}
-  <h1 class="login-title">{{ restaurant_name }}</h1>
+  {% if logo_url %}
+    <img src="{{ logo_url }}" alt="{{ restaurant_name }}" class="login-logo">
+  {% else %}
+    <h1 class="login-title">{{ restaurant_name }}</h1>
+  {% endif %}
   <p class="login-sub">Pannello del titolare</p>
   <form method="post" action="/login" class="login-panel" style="--focus: var(--espresso)">
     {% if error %}<div class="notice notice-error" role="alert">{{ error }}</div>{% endif %}

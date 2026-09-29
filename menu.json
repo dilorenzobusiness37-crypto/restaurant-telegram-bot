@@ -11,7 +11,10 @@
     ],
     "closed_weekdays": [0],
     "booking_times": ["19:30", "20:00", "20:30", "21:00"],
-    "max_people": 20
+    "max_people": 20,
+    "capacity": 40,
+    "tables": 12,
+    "table_turn_minutes": 120
   },
   "menu": [
     {

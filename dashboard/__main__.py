@@ -6,13 +6,16 @@ import sys
 import uvicorn
 
 from . import app as dashboard
+from . import settings_store as store
 import database as db
 
 
 def main() -> None:
-    if not dashboard.PASSWORD:
+    # A password set from the dashboard's settings page replaces DASHBOARD_PASSWORD.
+    custom = store.has_custom_password()
+    if not dashboard.PASSWORD and not custom:
         sys.exit("DASHBOARD_PASSWORD is missing. Set it in your .env file (see .env.example).")
-    if dashboard.PASSWORD == "change-me":
+    if dashboard.PASSWORD == "change-me" and not custom:
         sys.exit("DASHBOARD_PASSWORD is still the example value 'change-me'. Choose your own password in .env.")
     db.init_db()
 

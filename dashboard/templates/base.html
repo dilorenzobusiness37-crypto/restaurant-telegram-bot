@@ -8,16 +8,25 @@
   <title>{% block title %}Pannello{% endblock %} – {{ restaurant_name }}</title>
   <link rel="preload" href="/static/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/style.css">
+  {% if authenticated %}<meta name="csrf-token" content="{{ csrf }}">{% endif %}
 </head>
 <body class="{% block body_class %}{% endblock %}">
   {% block chrome %}
   <header class="masthead on-dark">
     <div class="page masthead-inner">
-      <a class="brand" href="/">{{ restaurant_name }}</a>
+      <a class="brand" href="/">
+        {%- if logo_url %}<img src="{{ logo_url }}" alt="{{ restaurant_name }}" class="brand-logo">
+        {%- else %}<span class="wordmark">{{ restaurant_name }}</span>{% endif -%}
+      </a>
+      <div class="masthead-info">
+        <p class="masthead-date">{{ today_long }}</p>
+        {% if status %}<p class="status status-{{ status.kind }}">{{ status.label }}</p>{% endif %}
+      </div>
       <nav class="tabs" aria-label="Sezioni">
         <a href="/" {% if nav == 'bookings' %}aria-current="page"{% endif %}>Oggi</a>
         <a href="/bookings/new" {% if nav == 'new' %}aria-current="page"{% endif %}>Aggiungi</a>
         <a href="/menu" {% if nav == 'menu' %}aria-current="page"{% endif %}>Menù</a>
+        <a href="/settings" {% if nav == 'settings' %}aria-current="page"{% endif %}>Impostazioni</a>
       </nav>
       <form method="post" action="/logout" class="logout">
         <button type="submit">Esci</button>
@@ -26,7 +35,7 @@
   </header>
   {% endblock %}
 
-  <main class="{% block main_class %}page{% endblock %}">
+  <main class="{% block main_class %}page{% endblock %}" id="main">
     {% block flashes %}
       {% for kind, message in flashes %}
         <div class="notice notice-{{ kind }}" role="status">{{ message }}</div>
@@ -34,6 +43,10 @@
     {% endblock %}
     {% block content %}{% endblock %}
   </main>
+
+  {# Feedback for actions done without reloading the page #}
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  {% if authenticated %}<script src="/static/app.js" defer></script>{% endif %}
   {% block scripts %}{% endblock %}
 </body>
 </html>

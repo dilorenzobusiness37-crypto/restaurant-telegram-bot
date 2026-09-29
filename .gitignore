@@ -11,3 +11,6 @@ __pycache__/
 venv/
 menu.json.bak
 menu.json.tmp
+
+# Dashboard settings and uploaded logo
+data/

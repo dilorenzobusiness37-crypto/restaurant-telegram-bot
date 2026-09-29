@@ -19,6 +19,9 @@ BLANK_ITEMS_NEW_CATEGORY = 3
 
 MAX_PRICE = 10_000
 MAX_PEOPLE_LIMIT = 500
+MAX_CAPACITY = 2000
+MAX_TABLES = 500
+DEFAULT_TURN_MINUTES = 120
 
 
 def parse_price(raw: str) -> float | None:
@@ -49,25 +52,35 @@ def form_view(config: dict) -> dict:
         "closed_weekdays": restaurant.get("closed_weekdays", []),
         "booking_times": ", ".join(restaurant.get("booking_times", [])),
         "max_people": restaurant.get("max_people", 20),
+        "capacity": restaurant.get("capacity", ""),
+        "tables": restaurant.get("tables", ""),
+        "table_turn_minutes": restaurant.get("table_turn_minutes", DEFAULT_TURN_MINUTES),
         "categories": categories,
         "weekdays": list(enumerate(WEEKDAYS_IT)),
     }
 
 
-def parse_form(form) -> tuple[dict, list[str]]:
-    """Build a new config from the submitted form.
+def _int_field(restaurant: dict, key: str, raw: str, low: int, high: int, message: str, errors: list[str]) -> None:
+    """Store raw as int if within [low, high]; empty clears the value."""
+    if raw == "":
+        restaurant.pop(key, None)
+    elif raw.isdigit() and low <= int(raw) <= high:
+        restaurant[key] = int(raw)
+    else:
+        restaurant[key] = raw  # keep what was typed so the form can show it again
+        errors.append(message)
 
-    Returns (config, errors). If errors is not empty the config must not be saved,
-    but it still holds what the user typed so the form can be shown again.
+
+def parse_settings_form(form) -> tuple[dict, list[str]]:
+    """Restaurant details and room settings (Impostazioni page).
+
+    Returns (config, errors); save only if errors is empty.
     """
     errors: list[str] = []
     text = lambda key: (form.get(key) or "").strip()  # noqa: E731
-
-    # Start from the current file so any extra keys the form doesn't know about are kept.
     config = copy.deepcopy(load_config())
     restaurant = config.setdefault("restaurant", {})
 
-    # --- Restaurant info ---
     restaurant["name"] = text("name")
     restaurant["address"] = text("address")
     restaurant["phone"] = text("phone")
@@ -78,6 +91,28 @@ def parse_form(form) -> tuple[dict, list[str]]:
         errors.append("L'indirizzo è obbligatorio.")
     if restaurant["maps_url"] and not restaurant["maps_url"].startswith(("http://", "https://")):
         errors.append("Il link a Google Maps deve iniziare con https://")
+
+    _int_field(restaurant, "capacity", text("capacity"), 1, MAX_CAPACITY,
+               f"I posti in sala devono essere tra 1 e {MAX_CAPACITY}.", errors)
+    _int_field(restaurant, "tables", text("tables"), 1, MAX_TABLES,
+               f"I tavoli devono essere tra 1 e {MAX_TABLES}.", errors)
+    _int_field(restaurant, "table_turn_minutes", text("table_turn_minutes"), 30, 360,
+               "La durata media di un tavolo deve essere tra 30 e 360 minuti.", errors)
+    return config, errors
+
+
+def parse_form(form) -> tuple[dict, list[str]]:
+    """Menu and opening hours (Menù page).
+
+    Returns (config, errors). If errors is not empty the config must not be saved,
+    but it still holds what the user typed so the form can be shown again.
+    """
+    errors: list[str] = []
+    text = lambda key: (form.get(key) or "").strip()  # noqa: E731
+
+    # Start from the current file so any extra keys the form doesn't know about are kept.
+    config = copy.deepcopy(load_config())
+    restaurant = config.setdefault("restaurant", {})
 
     restaurant["opening_hours"] = [line.strip() for line in text("opening_hours").splitlines() if line.strip()]
     if not restaurant["opening_hours"]:
