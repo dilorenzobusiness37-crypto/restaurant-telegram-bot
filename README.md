@@ -13,6 +13,7 @@ The bot talks to customers in Italian. Code and docs are in English.
   - `/annulla` (or the ❌ button) cancels at any step
 - **Owner notifications**: new and cancelled bookings are sent to the owner's chat (`OWNER_CHAT_ID`)
 - **`/mioid`** replies with your chat id, so the owner can find theirs
+- **Owner-only commands**: `/oggi` (today's bookings) and `/settimana` (next 7 days, grouped by day), both with total covers
 - **My bookings**: customers see their upcoming bookings and can cancel them (with a confirmation step)
 - **Clear replies to unexpected input**: stickers, photos, random text or unknown commands get a helpful answer instead of silence
 - Bookings stored in a local **SQLite** database (`bookings.db`, created automatically)
@@ -22,8 +23,6 @@ The bot talks to customers in Italian. Code and docs are in English.
 | Main menu | Booking | Owner notification |
 |---|---|---|
 | ![Main menu](docs/screenshot-start.png) | ![Booking](docs/screenshot-booking.png) | ![Owner notification](docs/screenshot-owner.png) |
-
-*Placeholder: add your screenshots to the `docs/` folder.*
 
 ## Installation
 
@@ -109,3 +108,20 @@ requirements.txt
 | `/annulla` | Cancel the booking in progress |
 | `/mioid` | Show your chat id |
 | `/help` | Help |
+
+### Owner-only commands
+
+These work only in the chat whose id matches `OWNER_CHAT_ID`. Anyone else gets "Questo comando non è disponibile".
+
+| Command | Description |
+|---|---|
+| `/oggi` | Today's bookings sorted by time, with name, party size, notes and total covers |
+| `/settimana` | Bookings for the next 7 days (today included), grouped by day, with total covers per day and for the week |
+
+## Possible extensions
+
+- **WhatsApp version** via the Meta Cloud API, reusing the same booking logic and database
+- **Web dashboard for the owner** to view, edit and export bookings
+- **AI answers to free-text questions** such as allergens, dishes and availability
+- **Automatic reminder** sent to the customer the day before the booking
+- **Booking form on the restaurant website**, saving to the same database and triggering the same owner notifications

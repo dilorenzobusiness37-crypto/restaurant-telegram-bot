@@ -75,6 +75,17 @@ def get_upcoming_bookings(user_id: int, today: date) -> list[sqlite3.Row]:
         ).fetchall()
 
 
+def get_bookings_between(start: date, end: date) -> list[sqlite3.Row]:
+    """Return all confirmed bookings from start to end (both included), by date and time."""
+    with closing(_connect()) as conn:
+        return conn.execute(
+            """SELECT * FROM bookings
+               WHERE status = 'confirmed' AND date BETWEEN ? AND ?
+               ORDER BY date, time, id""",
+            (start.isoformat(), end.isoformat()),
+        ).fetchall()
+
+
 def get_booking(booking_id: int) -> sqlite3.Row | None:
     with closing(_connect()) as conn:
         return conn.execute("SELECT * FROM bookings WHERE id = ?", (booking_id,)).fetchone()

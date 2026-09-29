@@ -6,6 +6,7 @@ import os
 import re
 import sys
 from datetime import date, datetime, timedelta
+from functools import wraps
 from html import escape
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -13,6 +14,7 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from telegram import (
     BotCommand,
+    BotCommandScopeChat,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     KeyboardButton,
@@ -48,6 +50,8 @@ MENU_PATH = Path(__file__).parent / "menu.json"
 # How far in advance a table can be booked.
 MAX_DAYS_AHEAD = 60
 MAX_NOTES_LENGTH = 300
+# Telegram rejects messages longer than 4096 characters; keep some margin.
+MAX_MESSAGE_LENGTH = 4000
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -222,15 +226,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
+    text = (
         "Ecco cosa posso fare:\n\n"
         f"{BTN_MENU} – consulta il menù\n"
         f"{BTN_BOOK} – prenota in pochi passaggi\n"
         f"{BTN_INFO} – dove siamo e quando siamo aperti\n"
         f"{BTN_MY_BOOKINGS} – vedi o cancella le tue prenotazioni\n\n"
-        "Comandi: /start, /prenota, /menu, /info, /prenotazioni, /annulla, /mioid",
-        reply_markup=MAIN_KEYBOARD,
+        "Comandi: /start, /prenota, /menu, /info, /prenotazioni, /annulla, /mioid"
     )
+    if is_owner(update):
+        text += (
+            "\n\n👨‍🍳 Comandi titolare:\n"
+            "/oggi – prenotazioni di oggi\n"
+            "/settimana – prenotazioni dei prossimi 7 giorni"
+        )
+    await update.message.reply_text(text, reply_markup=MAIN_KEYBOARD)
 
 
 async def my_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -568,6 +578,113 @@ async def cancel_booking_abort(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 # --------------------------------------------------------------------------- #
+# Owner commands
+# --------------------------------------------------------------------------- #
+
+
+def is_owner(update: Update) -> bool:
+    return bool(OWNER_CHAT_ID) and str(update.effective_chat.id) == OWNER_CHAT_ID
+
+
+def owner_only(handler):
+    """Decorator: run the handler only for the owner's chat."""
+
+    @wraps(handler)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not is_owner(update):
+            logger.info("User %s tried owner command %s", update.effective_user.id, update.message.text)
+            await update.message.reply_text(
+                "Questo comando non è disponibile.", reply_markup=MAIN_KEYBOARD
+            )
+            return
+        await handler(update, context)
+
+    return wrapper
+
+
+def format_owner_booking(b) -> str:
+    """One booking as seen by the owner: time, name, people, notes."""
+    line = f"🕗 <b>{b['time']}</b> · {escape(b['name'])} · {b['people']} pers. <i>(n. {b['id']})</i>"
+    if b["notes"]:
+        line += f"\n      📝 {escape(b['notes'])}"
+    return line
+
+
+def plural(n: int, one: str, many: str) -> str:
+    return f"{n} {one if n == 1 else many}"
+
+
+async def reply_long(update: Update, text: str) -> None:
+    """Send text in several messages if it exceeds Telegram's 4096-character limit."""
+    # Split on line boundaries so HTML tags (always opened and closed on one line) stay intact.
+    chunk = ""
+    for line in text.split("\n"):
+        if chunk and len(chunk) + len(line) + 1 > MAX_MESSAGE_LENGTH:
+            await update.message.reply_text(chunk.strip(), parse_mode=ParseMode.HTML)
+            chunk = ""
+        chunk += line + "\n"
+    await update.message.reply_text(chunk.strip(), parse_mode=ParseMode.HTML)
+
+
+@owner_only
+async def owner_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    today = now().date()
+    bookings = db.get_bookings_between(today, today)
+    header = f"📋 <b>Prenotazioni di oggi</b>\n{format_date(today)}"
+    if not bookings:
+        await update.message.reply_text(
+            f"{header}\n\nNessuna prenotazione per oggi.", parse_mode=ParseMode.HTML
+        )
+        return
+
+    covers = sum(b["people"] for b in bookings)
+    await reply_long(
+        update,
+        "\n\n".join(
+            [header]
+            + [format_owner_booking(b) for b in bookings]
+            + [f"👥 <b>Totale: {plural(covers, 'coperto', 'coperti')}</b> "
+               f"({plural(len(bookings), 'prenotazione', 'prenotazioni')})"]
+        ),
+    )
+
+
+@owner_only
+async def owner_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    today = now().date()
+    last_day = today + timedelta(days=6)
+    bookings = db.get_bookings_between(today, last_day)
+    header = (
+        f"🗓 <b>Prenotazioni dei prossimi 7 giorni</b>\n"
+        f"dal {today.strftime('%d/%m')} al {last_day.strftime('%d/%m')}"
+    )
+    if not bookings:
+        await update.message.reply_text(
+            f"{header}\n\nNessuna prenotazione in questo periodo.", parse_mode=ParseMode.HTML
+        )
+        return
+
+    by_day: dict[str, list] = {}
+    for b in bookings:
+        by_day.setdefault(b["date"], []).append(b)
+
+    blocks = [header]
+    for day, day_bookings in by_day.items():
+        covers = sum(b["people"] for b in day_bookings)
+        lines = [f"📅 <b>{format_date(date.fromisoformat(day)).capitalize()}</b>"]
+        lines += [format_owner_booking(b) for b in day_bookings]
+        lines.append(f"👥 Totale: <b>{plural(covers, 'coperto', 'coperti')}</b>")
+        blocks.append("\n".join(lines))
+
+    total = sum(b["people"] for b in bookings)
+    blocks.append(
+        f"<b>Totale settimana: {plural(total, 'coperto', 'coperti')}</b> "
+        f"({plural(len(bookings), 'prenotazione', 'prenotazioni')})"
+    )
+    await reply_long(update, "\n\n".join(blocks))
+
+
+# --------------------------------------------------------------------------- #
 # Fallbacks and errors
 # --------------------------------------------------------------------------- #
 
@@ -607,7 +724,7 @@ def button(text: str) -> filters.MessageFilter:
 
 async def post_init(application: Application) -> None:
     """Register the command list shown in Telegram's '/' menu."""
-    await application.bot.set_my_commands([
+    commands = [
         BotCommand("start", "Menu principale"),
         BotCommand("prenota", "Prenota un tavolo"),
         BotCommand("menu", "Consulta il menù"),
@@ -616,7 +733,22 @@ async def post_init(application: Application) -> None:
         BotCommand("annulla", "Annulla la prenotazione in corso"),
         BotCommand("mioid", "Mostra il tuo chat_id"),
         BotCommand("help", "Aiuto"),
-    ])
+    ]
+    await application.bot.set_my_commands(commands)
+
+    # The owner also sees the reserved commands in their '/' menu.
+    if OWNER_CHAT_ID:
+        owner_commands = [
+            BotCommand("oggi", "Prenotazioni di oggi"),
+            BotCommand("settimana", "Prenotazioni dei prossimi 7 giorni"),
+        ]
+        try:
+            await application.bot.set_my_commands(
+                owner_commands + commands, scope=BotCommandScopeChat(OWNER_CHAT_ID)
+            )
+        except Exception:
+            # Fails if the owner has never written to the bot: not critical.
+            logger.warning("Could not set the owner's command menu (chat id %s)", OWNER_CHAT_ID)
 
 
 def build_application() -> Application:
@@ -655,6 +787,8 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("menu", show_menu))
     application.add_handler(CommandHandler("info", show_info))
     application.add_handler(CommandHandler("prenotazioni", my_bookings))
+    application.add_handler(CommandHandler("oggi", owner_today))
+    application.add_handler(CommandHandler("settimana", owner_week))
     application.add_handler(MessageHandler(button(BTN_MENU), show_menu))
     application.add_handler(MessageHandler(button(BTN_INFO), show_info))
     application.add_handler(MessageHandler(button(BTN_MY_BOOKINGS), my_bookings))
