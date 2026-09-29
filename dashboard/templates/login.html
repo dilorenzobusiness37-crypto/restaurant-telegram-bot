@@ -1,15 +1,19 @@
 {% extends "base.html" %}
 {% block title %}Accesso{% endblock %}
+{% block body_class %}login-body on-dark{% endblock %}
+{% block chrome %}{% endblock %}
+{% block main_class %}login{% endblock %}
+{% block flashes %}{% endblock %}
 {% block content %}
-<div class="login">
-  <h1>🍽 {{ restaurant_name }}</h1>
-  <p class="muted">Pannello del titolare</p>
-  <form method="post" action="/login" class="card stack">
-    {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
-    <label>Password
+  <h1 class="login-title">{{ restaurant_name }}</h1>
+  <p class="login-sub">Pannello del titolare</p>
+  <form method="post" action="/login" class="login-panel" style="--focus: var(--espresso)">
+    {% if error %}<div class="notice notice-error" role="alert">{{ error }}</div>{% endif %}
+    {% for kind, message in flashes %}<div class="notice notice-{{ kind }}" role="status">{{ message }}</div>{% endfor %}
+    <label class="field">
+      <span class="field-label">Password</span>
       <input type="password" name="password" autocomplete="current-password" required autofocus>
     </label>
-    <button type="submit" class="btn btn-primary">Entra</button>
+    <button type="submit" class="btn btn-block">Entra</button>
   </form>
-</div>
 {% endblock %}

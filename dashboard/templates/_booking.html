@@ -1,28 +1,53 @@
-{# One booking row. Needs: b (booking dict), today_iso, back (url to return to after cancelling) #}
-{% macro booking_card(b, today_iso, back="/") %}
+{# The booking register: arrivals in time order, grouped by time slot.
+   live=True marks past slots and draws the "Adesso" line (today only). #}
+
+{% macro arrival(b, today_iso, back) %}
 {% set cancelled = b.status == 'cancelled' %}
-<article class="booking{{ ' is-cancelled' if cancelled }}">
-  <div class="b-time">{{ b.time }}</div>
-  <div class="b-main">
-    <div class="b-name">
-      <span class="strike">{{ b.name }}</span>
-      <span class="b-people strike">{{ b.people }} {{ 'persona' if b.people == 1 else 'persone' }}</span>
+<div class="arrival{{ ' is-cancelled' if cancelled }}">
+  <p class="arrival-name">{{ b.name }}</p>
+  <p class="arrival-people"><strong>{{ b.people }}</strong><span>{{ 'persona' if b.people == 1 else 'persone' }}</span></p>
+  <p class="arrival-source">
+    {%- if cancelled -%}
+      <span class="status-cancelled">{{ 'Cancellata da te' if b.cancelled_by == 'owner' else 'Cancellata dal cliente' }}</span>
+    {%- elif b.source == 'manual' -%}
+      {% if b.phone %}Al telefono, <a href="tel:{{ b.phone | replace(' ', '') }}">{{ b.phone }}</a>{% else %}Al telefono{% endif %}
+    {%- else -%}
+      Telegram{% if b.username %} @{{ b.username }}{% endif %}
+    {%- endif -%}
+  </p>
+  {% if b.notes %}
+    {% set tags = b.notes | note_tags %}
+    <p class="arrival-note">
+      {%- if tags and not cancelled %}<span class="flags">{% for t in tags %}<span class="flag flag-{{ t | lower }}">{{ t }}</span>{% endfor %}</span>{% endif -%}
+      {{ b.notes }}
+    </p>
+  {% endif %}
+  {% if not cancelled and b.date >= today_iso %}
+    <div class="arrival-actions">
+      <a class="link-danger" href="/bookings/{{ b.id }}/cancel?next={{ back | urlencode }}">Cancella<span class="visually-hidden"> la prenotazione di {{ b.name }} alle {{ b.time }}</span></a>
     </div>
-    <div class="b-meta">
-      {% if b.source == 'manual' %}📞 {{ b.phone or 'Al telefono' }}{% else %}✈️ Telegram{% if b.username %} · @{{ b.username }}{% endif %}{% endif %}
-      · n. {{ b.id }}
-    </div>
-    {% if b.notes %}<div class="b-notes">📝 {{ b.notes }}</div>{% endif %}
-  </div>
-  <div class="b-side">
-    {% if cancelled %}
-      <span class="badge badge-cancelled">{{ 'Cancellata da te' if b.cancelled_by == 'owner' else 'Cancellata dal cliente' }}</span>
-    {% else %}
-      <span class="badge badge-ok">Confermata</span>
-      {% if b.date >= today_iso %}
-        <a class="btn btn-small btn-danger-outline" href="/bookings/{{ b.id }}/cancel?next={{ back | urlencode }}">Cancella</a>
-      {% endif %}
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% macro register(bookings, today_iso, back='/', live=False) %}
+{% set now = now_hm() %}
+{% set ns = namespace(now_drawn=not live) %}
+<ol class="register">
+  {% for group in bookings | groupby('time') %}
+    {% set past = live and group.grouper < now %}
+    {% if not ns.now_drawn and not past %}
+      {% if not loop.first %}<li class="now-line"><span>Adesso {{ now }}</span></li>{% endif %}
+      {% set ns.now_drawn = True %}
     {% endif %}
-  </div>
-</article>
+    {% set confirmed = group.list | selectattr('status', 'eq', 'confirmed') | list %}
+    <li class="slot{{ ' is-past' if past }}{{ ' is-all-cancelled' if not confirmed }}">
+      <div class="slot-time">{{ group.grouper }}</div>
+      <div class="slot-bookings">
+        {% for b in group.list | sort(attribute='status', reverse=True) %}{{ arrival(b, today_iso, back) }}{% endfor %}
+      </div>
+    </li>
+    {% if loop.last and not ns.now_drawn %}<li class="now-line"><span>Adesso {{ now }}</span></li>{% endif %}
+  {% endfor %}
+</ol>
 {% endmacro %}

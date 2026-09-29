@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import hmac
 import logging
+import mimetypes
 import os
 import secrets
 from datetime import date, timedelta
@@ -42,9 +43,28 @@ MAX_MANUAL_PEOPLE = 200
 SESSION_SECRET = hashlib.sha256(f"dashboard-session|{PASSWORD}|{TOKEN}".encode()).hexdigest()
 
 HERE = Path(__file__).parent
+mimetypes.add_type("font/woff2", ".woff2")  # not known to Python's mimetypes on every system
 templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.globals["format_date"] = format_date
+templates.env.globals["now_hm"] = lambda: now().strftime("%H:%M")
+templates.env.globals["day_iso"] = lambda offset=0: (now().date() + timedelta(days=offset)).isoformat()
+templates.env.globals["booking_slots"] = lambda: load_config()["restaurant"]["booking_times"]
 templates.env.filters["todate"] = date.fromisoformat
+
+# Words in the booking notes that deserve a visible flag during service.
+NOTE_TAGS = {
+    "Allergie": ("allerg", "celiac", "glutine", "lattosio", "intoller", "noci", "arachidi", "crostacei", "vegan"),
+    "Bambini": ("bambin", "seggiolon", "passeggino", "neonat", "bimb"),
+    "Festa": ("compleann", "anniversari", "festa", "laurea", "torta"),
+}
+
+
+def note_tags(notes: str | None) -> list[str]:
+    text = (notes or "").lower()
+    return [tag for tag, words in NOTE_TAGS.items() if any(w in text for w in words)]
+
+
+templates.env.filters["note_tags"] = note_tags
 templates.env.filters["price_input"] = (
     lambda p: f"{p:.2f}".replace(".", ",") if isinstance(p, (int, float)) else (p or "")
 )

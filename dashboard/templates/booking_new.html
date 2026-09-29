@@ -1,41 +1,87 @@
 {% extends "base.html" %}
-{% block title %}Nuova prenotazione{% endblock %}
+{% block title %}Aggiungi prenotazione{% endblock %}
 {% block content %}
-<h1>Nuova prenotazione</h1>
-<p class="muted">Per chi prenota al telefono o di persona.</p>
+<div class="form-page">
+  <h1>Aggiungi prenotazione</h1>
+  <p class="lead">Per chi telefona o passa di persona. Comparirà anche nel bot.</p>
 
-{% if errors %}
-<div class="flash flash-error">
-  <ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+  {% if errors %}
+  <div class="notice notice-error" role="alert">
+    <div>Controlla questi campi:
+      <ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+    </div>
+  </div>
+  {% endif %}
+
+  <form method="post" action="/bookings/new" style="margin-top: 20px">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+
+    <label class="field">
+      <span class="field-label">Nome</span>
+      <input type="text" name="name" value="{{ values.name }}" required minlength="2" maxlength="50" autocomplete="off" autocapitalize="words">
+    </label>
+
+    <div class="field">
+      <label class="field-label" for="people">Persone</label>
+      <div class="picks picks-grid" data-target="people">
+        {% for n in range(1, 9) %}<button type="button" class="pick" data-value="{{ n }}" aria-pressed="false">{{ n }}</button>{% endfor %}
+      </div>
+      <input type="number" id="people" name="people" value="{{ values.people }}" min="1" max="200" required inputmode="numeric">
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="date">Giorno</label>
+      <div class="picks" data-target="date">
+        <button type="button" class="pick" data-value="{{ day_iso(0) }}" aria-pressed="false">Oggi</button>
+        <button type="button" class="pick" data-value="{{ day_iso(1) }}" aria-pressed="false">Domani</button>
+      </div>
+      <input type="date" id="date" name="date" value="{{ values.date }}" required>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="time">Orario</label>
+      <div class="picks picks-grid" data-target="time">
+        {% for s in slots %}<button type="button" class="pick" data-value="{{ s }}" aria-pressed="false">{{ s }}</button>{% endfor %}
+      </div>
+      <input type="time" id="time" name="time" value="{{ values.time }}" required>
+    </div>
+
+    <label class="field">
+      <span class="field-label">Telefono <small>facoltativo</small></span>
+      <input type="tel" name="phone" value="{{ values.phone }}" maxlength="30" autocomplete="off">
+    </label>
+
+    <label class="field">
+      <span class="field-label">Note <small>allergie, bambini, occasioni</small></span>
+      <textarea name="notes" rows="3" maxlength="300">{{ values.notes }}</textarea>
+    </label>
+
+    <div class="form-actions">
+      <button type="submit" class="btn">Aggiungi prenotazione</button>
+      <a href="/" class="btn btn-secondary">Annulla</a>
+    </div>
+  </form>
 </div>
-{% endif %}
+{% endblock %}
 
-<form method="post" action="/bookings/new" class="card stack">
-  <input type="hidden" name="csrf" value="{{ csrf }}">
-  <label>Nome
-    <input type="text" name="name" value="{{ values.name }}" required minlength="2" maxlength="50" autocomplete="off">
-  </label>
-  <label>Telefono <span class="muted small">(facoltativo)</span>
-    <input type="tel" name="phone" value="{{ values.phone }}" maxlength="30" autocomplete="off">
-  </label>
-  <div class="row">
-    <label>Persone
-      <input type="number" name="people" value="{{ values.people }}" min="1" max="200" required inputmode="numeric">
-    </label>
-    <label>Data
-      <input type="date" name="date" value="{{ values.date }}" required>
-    </label>
-    <label>Orario
-      <input type="time" name="time" value="{{ values.time }}" list="slots" required>
-      <datalist id="slots">{% for s in slots %}<option value="{{ s }}">{% endfor %}</datalist>
-    </label>
-  </div>
-  <label>Note <span class="muted small">(facoltativo)</span>
-    <textarea name="notes" rows="3" maxlength="300">{{ values.notes }}</textarea>
-  </label>
-  <div class="actions">
-    <button type="submit" class="btn btn-primary">Salva prenotazione</button>
-    <a href="/" class="btn btn-ghost">Annulla</a>
-  </div>
-</form>
+{% block scripts %}
+<script>
+  // Quick picks fill the input next to them; typing in the input still works.
+  document.querySelectorAll(".picks").forEach(function (group) {
+    var input = document.getElementById(group.dataset.target);
+    function sync() {
+      group.querySelectorAll(".pick").forEach(function (b) {
+        b.setAttribute("aria-pressed", String(b.dataset.value === input.value));
+      });
+    }
+    group.addEventListener("click", function (e) {
+      var b = e.target.closest(".pick");
+      if (!b) return;
+      input.value = b.dataset.value;
+      sync();
+    });
+    input.addEventListener("input", sync);
+    sync();
+  });
+</script>
 {% endblock %}
