@@ -1,0 +1,54 @@
+{
+  "restaurant": {
+    "name": "Trattoria Da Mario",
+    "address": "Via Roma 12, 00100 Roma",
+    "phone": "+39 06 1234567",
+    "maps_url": "https://maps.google.com/?q=Via+Roma+12+Roma",
+    "opening_hours": [
+      "Lunedì: chiuso",
+      "Martedì - Venerdì: 12:00 - 14:30, 19:00 - 23:00",
+      "Sabato - Domenica: 12:00 - 15:00, 19:00 - 23:30"
+    ],
+    "closed_weekdays": [0],
+    "booking_times": ["19:30", "20:00", "20:30", "21:00"],
+    "max_people": 20
+  },
+  "menu": [
+    {
+      "category": "Antipasti",
+      "emoji": "🥖",
+      "items": [
+        {"name": "Bruschette al pomodoro", "description": "Pane casereccio, pomodorini, basilico", "price": 6.00},
+        {"name": "Tagliere di salumi e formaggi", "description": "Selezione di prodotti laziali", "price": 14.00},
+        {"name": "Supplì classico", "description": "Riso, ragù e mozzarella filante", "price": 3.50}
+      ]
+    },
+    {
+      "category": "Primi",
+      "emoji": "🍝",
+      "items": [
+        {"name": "Spaghetti alla carbonara", "description": "Guanciale, pecorino romano, uovo", "price": 12.00},
+        {"name": "Rigatoni all'amatriciana", "description": "Guanciale, pomodoro, pecorino", "price": 12.00},
+        {"name": "Tonnarelli cacio e pepe", "description": "Pecorino romano e pepe nero", "price": 11.00}
+      ]
+    },
+    {
+      "category": "Secondi",
+      "emoji": "🍖",
+      "items": [
+        {"name": "Saltimbocca alla romana", "description": "Vitello, prosciutto crudo, salvia", "price": 16.00},
+        {"name": "Abbacchio a scottadito", "description": "Costolette di agnello alla brace", "price": 18.00},
+        {"name": "Filetto di branzino", "description": "Al forno con patate e olive", "price": 19.00}
+      ]
+    },
+    {
+      "category": "Dolci",
+      "emoji": "🍰",
+      "items": [
+        {"name": "Tiramisù della casa", "description": "Savoiardi, mascarpone, caffè", "price": 6.00},
+        {"name": "Maritozzo con la panna", "description": "Il classico dolce romano", "price": 5.00},
+        {"name": "Panna cotta ai frutti di bosco", "description": "", "price": 5.50}
+      ]
+    }
+  ]
+}

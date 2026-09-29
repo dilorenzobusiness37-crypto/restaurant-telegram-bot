@@ -1,0 +1,11 @@
+# Secrets
+.env
+
+# Local data
+bookings.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
