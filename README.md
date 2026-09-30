@@ -2,7 +2,7 @@
 
 A Telegram bot for restaurants: customers can browse the menu, check opening hours and book a table in a few taps. The owner gets a Telegram message for every new or cancelled booking, and has a web dashboard to manage bookings, menu and opening hours.
 
-The bot talks to customers in Italian. Code and docs are in English.
+The bot speaks Italian, English, French, German and Spanish, picking each customer's phone language. The dashboard is in Italian or English. Code and docs are in English. See [Languages](#languages).
 
 ## Features
 
@@ -96,6 +96,7 @@ To use it from a phone on the same Wi-Fi, set `DASHBOARD_HOST=0.0.0.0` in `.env`
 | `TELEGRAM_TOKEN` | yes | Bot token from @BotFather |
 | `OWNER_CHAT_ID` | no | Chat that receives booking notifications |
 | `TIMEZONE` | no | Default `Europe/Rome`; used for "today" and past time slots |
+| `DEFAULT_LANGUAGE` | no | Default `it`; language for customers whose phone language is not supported (`it`, `en`, `fr`, `de`, `es`) |
 | `DASHBOARD_PASSWORD` | for the dashboard | Password to log in to the owner dashboard (until one is set from *Impostazioni*) |
 | `DASHBOARD_HOST` | no | Default `127.0.0.1`; `0.0.0.0` to reach it from other devices |
 | `DASHBOARD_PORT` | no | Default `8000` |
@@ -137,6 +138,8 @@ Tip: check the file with a JSON validator (e.g. jsonlint.com) after editing.
 
 ```
 bot.py            # Telegram handlers and booking conversation
+i18n.py           # Translations: language choice, dates and prices per language
+locales/          # it.json, en.json, fr.json, de.json, es.json: every text of the bot and dashboard
 database.py       # SQLite storage for bookings (shared by bot and dashboard)
 dashboard/        # Owner web dashboard (python -m dashboard)
   app.py          #   routes: login, bookings, manual booking, cancel, menu, settings
@@ -155,13 +158,16 @@ requirements.txt
 | Command | Description |
 |---|---|
 | `/start` | Main menu |
-| `/prenota` | Book a table |
+| `/prenota` or `/book` | Book a table |
 | `/menu` | Show the menu |
 | `/info` | Opening hours and address |
-| `/prenotazioni` | My bookings |
-| `/annulla` | Cancel the booking in progress |
-| `/mioid` | Show your chat id |
+| `/prenotazioni` or `/bookings` | My bookings |
+| `/annulla` or `/stop` | Cancel the booking in progress |
+| `/lingua` or `/language` | Choose the language |
+| `/mioid` or `/myid` | Show your chat id |
 | `/help` | Help |
+
+Both names always work; Italian users see the Italian ones, everyone else the English ones.
 
 ### Owner-only commands
 
@@ -169,8 +175,39 @@ These work only in the chat whose id matches `OWNER_CHAT_ID`. Anyone else gets "
 
 | Command | Description |
 |---|---|
-| `/oggi` | Today's bookings sorted by time, with name, party size, notes and total covers |
-| `/settimana` | Bookings for the next 7 days (today included), grouped by day, with total covers per day and for the week |
+| `/oggi` or `/today` | Today's bookings sorted by time, with name, party size, notes and total covers |
+| `/settimana` or `/week` | Bookings for the next 7 days (today included), grouped by day, with total covers per day and for the week |
+
+## Languages
+
+### For customers (bot)
+
+The bot answers in **Italian, English, French, German or Spanish**:
+
+1. the language the customer picked with `/lingua` (or `/language`), saved per user;
+2. otherwise the language of their phone (Telegram's `language_code`);
+3. otherwise `DEFAULT_LANGUAGE` from `.env` (default `it`).
+
+Everything the customer reads is translated: messages, buttons, booking summaries, dates written in full ("venerdì 2 ottobre 2026", "Friday, October 2, 2026", "Freitag, 2. Oktober 2026") and prices ("€ 12,00", "€12.00", "12,00 €"). Buttons are recognised in any language.
+
+What comes from `menu.json` is **not** translated: dish names, descriptions, category names and the opening-hours lines are shown exactly as written.
+
+Each booking remembers the customer's language, so if the owner cancels it from the dashboard the customer is told in their own language.
+
+### For the owner (dashboard and notifications)
+
+The dashboard is in **Italian or English**, chosen in *Impostazioni → Lingua*. The same setting is used for the owner's Telegram notifications and for `/oggi` and `/settimana`, whatever the language of the owner's phone. It is stored in `menu.json` as `restaurant.panel_language`.
+
+### Changing or adding texts
+
+All texts are in `locales/<language>.json` (dotted keys such as `bot.btn.menu`, `owner.new_booking`, `dash.nav_today`); there are no user-facing strings in the code. Edit a file and restart the bot and dashboard.
+
+- `it.json` and `en.json` contain everything (bot, owner notifications, dashboard).
+- `fr.json`, `de.json` and `es.json` contain the customer side (`common`, `bot`).
+- Keep the `{placeholders}` identical to the Italian file; plural forms use `{"one": ..., "other": ...}`.
+- `common.note_keywords` lists the words that flag a note (allergies, children, celebrations) in each language.
+
+To add a customer language, copy `en.json` to `<code>.json`, translate the `common` and `bot` sections, and add the code to `SUPPORTED` in `i18n.py`.
 
 ## Possible extensions
 

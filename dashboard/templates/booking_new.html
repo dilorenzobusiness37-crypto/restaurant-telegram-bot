@@ -1,13 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Aggiungi prenotazione{% endblock %}
+{% block title %}{{ _('dash.new_title') }}{% endblock %}
 {% block content %}
 <div class="form-page">
-  <h1>Aggiungi prenotazione</h1>
-  <p class="lead">Per chi telefona o passa di persona. Comparirà anche nel bot.</p>
+  <h1>{{ _('dash.new_title') }}</h1>
+  <p class="lead">{{ _('dash.new_lead') }}</p>
 
   {% if errors %}
   <div class="notice notice-error" role="alert">
-    <div>Controlla questi campi:
+    <div>{{ _('dash.check_fields') }}
       <ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
     </div>
   </div>
@@ -17,12 +17,12 @@
     <input type="hidden" name="csrf" value="{{ csrf }}">
 
     <label class="field">
-      <span class="field-label">Nome</span>
+      <span class="field-label">{{ _('dash.name') }}</span>
       <input type="text" name="name" value="{{ values.name }}" required minlength="2" maxlength="50" autocomplete="off" autocapitalize="words">
     </label>
 
     <div class="field">
-      <label class="field-label" for="people">Persone</label>
+      <label class="field-label" for="people">{{ _('dash.people') }}</label>
       <div class="picks picks-grid" data-target="people">
         {% for n in range(1, 9) %}<button type="button" class="pick" data-value="{{ n }}" aria-pressed="false">{{ n }}</button>{% endfor %}
       </div>
@@ -30,16 +30,16 @@
     </div>
 
     <div class="field">
-      <label class="field-label" for="date">Giorno</label>
+      <label class="field-label" for="date">{{ _('dash.day') }}</label>
       <div class="picks" data-target="date">
-        <button type="button" class="pick" data-value="{{ day_iso(0) }}" aria-pressed="false">Oggi</button>
-        <button type="button" class="pick" data-value="{{ day_iso(1) }}" aria-pressed="false">Domani</button>
+        <button type="button" class="pick" data-value="{{ day_iso(0) }}" aria-pressed="false">{{ _('bot.btn.today') }}</button>
+        <button type="button" class="pick" data-value="{{ day_iso(1) }}" aria-pressed="false">{{ _('bot.btn.tomorrow') }}</button>
       </div>
       <input type="date" id="date" name="date" value="{{ values.date }}" required>
     </div>
 
     <div class="field">
-      <label class="field-label" for="time">Orario</label>
+      <label class="field-label" for="time">{{ _('dash.time') }}</label>
       <div class="picks picks-grid" data-target="time">
         {% for s in slots %}<button type="button" class="pick" data-value="{{ s }}" aria-pressed="false">{{ s }}</button>{% endfor %}
       </div>
@@ -47,18 +47,18 @@
     </div>
 
     <label class="field">
-      <span class="field-label">Telefono <small>facoltativo</small></span>
+      <span class="field-label">{{ _('dash.phone') }} <small>{{ _('dash.optional') }}</small></span>
       <input type="tel" name="phone" value="{{ values.phone }}" maxlength="30" autocomplete="off">
     </label>
 
     <label class="field">
-      <span class="field-label">Note <small>allergie, bambini, occasioni</small></span>
+      <span class="field-label">{{ _('dash.notes') }} <small>{{ _('dash.notes_hint') }}</small></span>
       <textarea name="notes" rows="3" maxlength="300">{{ values.notes }}</textarea>
     </label>
 
     <div class="form-actions">
-      <button type="submit" class="btn">Aggiungi prenotazione</button>
-      <a href="/" class="btn btn-secondary">Annulla</a>
+      <button type="submit" class="btn">{{ _('dash.add_booking') }}</button>
+      <a href="/" class="btn btn-secondary">{{ _('dash.cancel_button') }}</a>
     </div>
   </form>
 </div>

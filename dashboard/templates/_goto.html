@@ -1,5 +1,5 @@
 <form method="get" action="/" class="goto">
-  <label for="goto-day">Vai a un giorno</label>
+  <label for="goto-day">{{ _('dash.goto_label') }}</label>
   <input type="date" id="goto-day" name="day" value="{{ selected.isoformat() if selected else '' }}" required>
-  <button type="submit" class="btn btn-secondary">Mostra</button>
+  <button type="submit" class="btn btn-secondary">{{ _('dash.goto_button') }}</button>
 </form>

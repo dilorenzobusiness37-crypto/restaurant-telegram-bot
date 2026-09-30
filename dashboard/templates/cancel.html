@@ -1,29 +1,25 @@
 {% extends "base.html" %}
-{% block title %}Cancella prenotazione{% endblock %}
+{% block title %}{{ _('dash.cancel_title') }}{% endblock %}
 {% block content %}
 <div class="form-page">
-  <h1>Cancellare la prenotazione di {{ booking.name }}?</h1>
+  <h1>{{ _('dash.cancel_question', name=booking.name) }}</h1>
   <p class="lead">
-    {% if booking.source == 'manual' %}
-      È una prenotazione telefonica: il cliente non riceve avvisi, dovrai chiamarlo tu.
-    {% else %}
-      Il cliente riceverà subito un messaggio su Telegram.
-    {% endif %}
+    {% if booking.source == 'manual' %}{{ _('dash.cancel_manual') }}{% else %}{{ _('dash.cancel_telegram') }}{% endif %}
   </p>
 
   <dl class="facts">
-    <div><dt>Quando</dt><dd>{{ format_date(booking.date | todate) | capitalize }}, alle {{ booking.time }}</dd></div>
-    <div><dt>Persone</dt><dd class="num">{{ booking.people }}</dd></div>
-    {% if booking.phone %}<div><dt>Telefono</dt><dd><a href="tel:{{ booking.phone | replace(' ', '') }}">{{ booking.phone }}</a></dd></div>{% endif %}
-    {% if booking.notes %}<div><dt>Note</dt><dd>{{ booking.notes }}</dd></div>{% endif %}
-    <div><dt>Numero</dt><dd class="num">{{ booking.id }}</dd></div>
+    <div><dt>{{ _('dash.when') }}</dt><dd>{{ _('dash.at_time', date=format_date(booking.date | todate) | ucfirst, time=booking.time) }}</dd></div>
+    <div><dt>{{ _('dash.people') }}</dt><dd class="num">{{ booking.people }}</dd></div>
+    {% if booking.phone %}<div><dt>{{ _('dash.phone') }}</dt><dd><a href="tel:{{ booking.phone | replace(' ', '') }}">{{ booking.phone }}</a></dd></div>{% endif %}
+    {% if booking.notes %}<div><dt>{{ _('dash.notes') }}</dt><dd>{{ booking.notes }}</dd></div>{% endif %}
+    <div><dt>{{ _('dash.number') }}</dt><dd class="num">{{ booking.id }}</dd></div>
   </dl>
 
   <form method="post" action="/bookings/{{ booking.id }}/cancel" class="form-actions">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <input type="hidden" name="next" value="{{ next }}">
-    <button type="submit" class="btn btn-danger">Cancella prenotazione</button>
-    <a href="{{ next }}" class="btn btn-secondary">Tienila</a>
+    <button type="submit" class="btn btn-danger">{{ _('dash.cancel_confirm') }}</button>
+    <a href="{{ next }}" class="btn btn-secondary">{{ _('dash.keep') }}</a>
   </form>
 </div>
 {% endblock %}

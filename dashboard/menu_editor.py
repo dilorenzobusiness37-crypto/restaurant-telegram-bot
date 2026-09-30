@@ -9,7 +9,8 @@ import os
 import re
 import shutil
 
-from bot import MENU_PATH, WEEKDAYS_IT, load_config, normalize_time
+import i18n
+from bot import MENU_PATH, load_config, normalize_time
 
 BACKUP_PATH = MENU_PATH.with_suffix(".json.bak")
 
@@ -22,6 +23,11 @@ MAX_PEOPLE_LIMIT = 500
 MAX_CAPACITY = 2000
 MAX_TABLES = 500
 DEFAULT_TURN_MINUTES = 120
+
+
+def _(key: str, **params) -> str:
+    """Messages in the dashboard's language."""
+    return i18n.t(i18n.panel_language(load_config()), key, **params)
 
 
 def parse_price(raw: str) -> float | None:
@@ -56,7 +62,8 @@ def form_view(config: dict) -> dict:
         "tables": restaurant.get("tables", ""),
         "table_turn_minutes": restaurant.get("table_turn_minutes", DEFAULT_TURN_MINUTES),
         "categories": categories,
-        "weekdays": list(enumerate(WEEKDAYS_IT)),
+        "weekdays": list(enumerate(i18n.raw(i18n.panel_language(config), "common.weekdays"))),
+        "panel_language": i18n.panel_language(config),
     }
 
 
@@ -86,18 +93,24 @@ def parse_settings_form(form) -> tuple[dict, list[str]]:
     restaurant["phone"] = text("phone")
     restaurant["maps_url"] = text("maps_url")
     if not restaurant["name"]:
-        errors.append("Il nome del ristorante è obbligatorio.")
+        errors.append(_("dash.msg.name_required"))
     if not restaurant["address"]:
-        errors.append("L'indirizzo è obbligatorio.")
+        errors.append(_("dash.msg.address_required"))
     if restaurant["maps_url"] and not restaurant["maps_url"].startswith(("http://", "https://")):
-        errors.append("Il link a Google Maps deve iniziare con https://")
+        errors.append(_("dash.msg.maps_url"))
+
+    chosen = text("panel_language")
+    if chosen in i18n.PANEL_LANGUAGES:
+        restaurant["panel_language"] = chosen
+    elif chosen:
+        errors.append(_("dash.msg.language_invalid"))
 
     _int_field(restaurant, "capacity", text("capacity"), 1, MAX_CAPACITY,
-               f"I posti in sala devono essere tra 1 e {MAX_CAPACITY}.", errors)
+               _("dash.msg.capacity_range", max=MAX_CAPACITY), errors)
     _int_field(restaurant, "tables", text("tables"), 1, MAX_TABLES,
-               f"I tavoli devono essere tra 1 e {MAX_TABLES}.", errors)
+               _("dash.msg.tables_range", max=MAX_TABLES), errors)
     _int_field(restaurant, "table_turn_minutes", text("table_turn_minutes"), 30, 360,
-               "La durata media di un tavolo deve essere tra 30 e 360 minuti.", errors)
+               _("dash.msg.turn_range"), errors)
     return config, errors
 
 
@@ -116,31 +129,31 @@ def parse_form(form) -> tuple[dict, list[str]]:
 
     restaurant["opening_hours"] = [line.strip() for line in text("opening_hours").splitlines() if line.strip()]
     if not restaurant["opening_hours"]:
-        errors.append("Inserisci almeno una riga negli orari di apertura.")
+        errors.append(_("dash.msg.hours_required"))
 
     closed = sorted({int(d) for d in form.getlist("closed_weekdays") if d.isdigit() and 0 <= int(d) <= 6})
     restaurant["closed_weekdays"] = closed
     if len(closed) == 7:
-        errors.append("Non puoi segnare tutti i giorni come chiusi.")
+        errors.append(_("dash.msg.all_closed"))
 
     raw_times = [t for t in re.split(r"[,\s;]+", text("booking_times")) if t]
     times = []
     for raw in raw_times:
         normalized = normalize_time(raw)
         if normalized is None:
-            errors.append(f"Fascia oraria non valida: «{raw}». Usa il formato HH:MM, es. 20:30.")
+            errors.append(_("dash.msg.slot_invalid", raw=raw))
         elif normalized not in times:
             times.append(normalized)
     restaurant["booking_times"] = sorted(times)
     if not raw_times:
-        errors.append("Inserisci almeno una fascia oraria prenotabile.")
+        errors.append(_("dash.msg.slots_required"))
 
     max_people = text("max_people")
     if max_people.isdigit() and 1 <= int(max_people) <= MAX_PEOPLE_LIMIT:
         restaurant["max_people"] = int(max_people)
     else:
         restaurant["max_people"] = max_people
-        errors.append(f"Il numero massimo di persone deve essere tra 1 e {MAX_PEOPLE_LIMIT}.")
+        errors.append(_("dash.msg.max_people_range", max=MAX_PEOPLE_LIMIT))
 
     # --- Menu ---
     menu = []
@@ -159,25 +172,26 @@ def parse_form(form) -> tuple[dict, list[str]]:
             if not (item_name or desc or raw_price):
                 continue  # empty row
             price = parse_price(raw_price)
-            label = f"«{item_name}»" if item_name else f"senza nome in «{name or 'nuova categoria'}»"
+            label = (_("dash.msg.dish_named", name=item_name) if item_name
+                     else _("dash.msg.dish_unnamed", category=name or _("dash.new_category")))
             if not item_name:
-                errors.append(f"C'è un piatto {label}: inserisci il nome.")
+                errors.append(_("dash.msg.dish_name_missing", label=label))
             if price is None:
-                errors.append(f"Prezzo non valido per il piatto {label}: usa un numero, es. 12,50.")
+                errors.append(_("dash.msg.dish_price_invalid", label=label))
             elif price > MAX_PRICE:
-                errors.append(f"Prezzo troppo alto per il piatto {label}.")
+                errors.append(_("dash.msg.dish_price_high", label=label))
             items.append({"name": item_name, "description": desc, "price": price if price is not None else raw_price})
 
         if not (name or emoji or items):
             continue  # untouched "new category" block
         if not name:
-            errors.append("Una categoria ha dei piatti ma nessun nome.")
+            errors.append(_("dash.msg.category_no_name"))
         elif not items:
-            errors.append(f"La categoria «{name}» non ha piatti: aggiungine almeno uno o eliminala.")
+            errors.append(_("dash.msg.category_empty", name=name))
         menu.append({"category": name, "emoji": emoji, "items": items})
 
     if not menu:
-        errors.append("Il menù deve avere almeno una categoria.")
+        errors.append(_("dash.msg.menu_empty"))
     config["menu"] = menu
     return config, errors
 

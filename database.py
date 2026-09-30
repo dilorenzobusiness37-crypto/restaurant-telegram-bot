@@ -25,10 +25,17 @@ CREATE TABLE IF NOT EXISTS bookings (
     source        TEXT    NOT NULL DEFAULT 'telegram',   -- 'telegram' | 'manual'
     phone         TEXT,
     cancelled_by  TEXT,              -- 'customer' | 'owner'
-    cancelled_at  TEXT
+    cancelled_at  TEXT,
+    language      TEXT               -- customer's language, for messages sent later
 );
 CREATE INDEX IF NOT EXISTS idx_bookings_user ON bookings (user_id, date);
 CREATE INDEX IF NOT EXISTS idx_bookings_date ON bookings (date, time);
+
+-- Language chosen by a Telegram user with /lingua (overrides the phone's language).
+CREATE TABLE IF NOT EXISTS user_prefs (
+    user_id   INTEGER PRIMARY KEY,
+    language  TEXT NOT NULL
+);
 """
 
 # Columns added after the first release: added to existing databases by init_db().
@@ -37,6 +44,7 @@ MIGRATIONS = {
     "phone": "ALTER TABLE bookings ADD COLUMN phone TEXT",
     "cancelled_by": "ALTER TABLE bookings ADD COLUMN cancelled_by TEXT",
     "cancelled_at": "ALTER TABLE bookings ADD COLUMN cancelled_at TEXT",
+    "language": "ALTER TABLE bookings ADD COLUMN language TEXT",
 }
 
 
@@ -71,13 +79,14 @@ def add_booking(
     notes: str | None,
     phone: str | None = None,
     source: str = "telegram",
+    language: str | None = None,
 ) -> int:
     """Save a new booking and return its id."""
     with closing(_connect()) as conn, conn:
         cur = conn.execute(
             """INSERT INTO bookings
-                   (user_id, username, name, people, date, time, notes, created_at, source, phone)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (user_id, username, name, people, date, time, notes, created_at, source, phone, language)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 user_id,
                 username,
@@ -89,6 +98,7 @@ def add_booking(
                 _now(),
                 source,
                 phone,
+                language,
             ),
         )
         return cur.lastrowid
@@ -147,3 +157,18 @@ def cancel_booking_by_owner(booking_id: int) -> bool:
             (_now(), booking_id),
         )
         return cur.rowcount > 0
+
+
+def get_user_language(user_id: int) -> str | None:
+    with closing(_connect()) as conn:
+        row = conn.execute("SELECT language FROM user_prefs WHERE user_id = ?", (user_id,)).fetchone()
+        return row["language"] if row else None
+
+
+def set_user_language(user_id: int, language: str) -> None:
+    with closing(_connect()) as conn, conn:
+        conn.execute(
+            """INSERT INTO user_prefs (user_id, language) VALUES (?, ?)
+               ON CONFLICT(user_id) DO UPDATE SET language = excluded.language""",
+            (user_id, language),
+        )

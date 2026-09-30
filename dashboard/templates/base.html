@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="it">
+<html lang="{{ lang() }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="robots" content="noindex">
   <meta name="theme-color" content="#561a2c">
-  <title>{% block title %}Pannello{% endblock %} – {{ restaurant_name }}</title>
+  <title>{% block title %}{{ _('dash.title_default') }}{% endblock %} – {{ restaurant_name }}</title>
   <link rel="preload" href="/static/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/style.css?v={{ asset_version() if asset_version is defined else '' }}">
   {% if authenticated %}<meta name="csrf-token" content="{{ csrf }}">{% endif %}
@@ -22,14 +22,14 @@
         <p class="masthead-date">{{ today_long }}</p>
         {% if status %}<p class="status status-{{ status.kind }}">{{ status.label }}</p>{% endif %}
       </div>
-      <nav class="tabs" aria-label="Sezioni">
-        <a href="/" {% if nav == 'bookings' %}aria-current="page"{% endif %}>Oggi</a>
-        <a href="/bookings/new" {% if nav == 'new' %}aria-current="page"{% endif %}>Aggiungi</a>
-        <a href="/menu" {% if nav == 'menu' %}aria-current="page"{% endif %}>Menù</a>
-        <a href="/settings" {% if nav == 'settings' %}aria-current="page"{% endif %}>Impostazioni</a>
+      <nav class="tabs" aria-label="{{ _('dash.nav_sections') }}">
+        <a href="/" {% if nav == 'bookings' %}aria-current="page"{% endif %}>{{ _('dash.nav_today') }}</a>
+        <a href="/bookings/new" {% if nav == 'new' %}aria-current="page"{% endif %}>{{ _('dash.nav_add') }}</a>
+        <a href="/menu" {% if nav == 'menu' %}aria-current="page"{% endif %}>{{ _('dash.nav_menu') }}</a>
+        <a href="/settings" {% if nav == 'settings' %}aria-current="page"{% endif %}>{{ _('dash.nav_settings') }}</a>
       </nav>
       <form method="post" action="/logout" class="logout">
-        <button type="submit">Esci</button>
+        <button type="submit">{{ _('dash.logout') }}</button>
       </form>
     </div>
   </header>
@@ -46,6 +46,8 @@
 
   {# Feedback for actions done without reloading the page #}
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  {# Texts for app.js and menu.js, in the dashboard's language #}
+  {% if authenticated %}<script type="application/json" id="i18n">{{ js_strings() | tojson }}</script>{% endif %}
   {% if authenticated %}<script src="/static/app.js?v={{ asset_version() if asset_version is defined else '' }}" defer></script>{% endif %}
   {% block scripts %}{% endblock %}
 </body>

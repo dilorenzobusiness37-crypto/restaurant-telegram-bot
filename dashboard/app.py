@@ -28,7 +28,8 @@ ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
 import database as db  # noqa: E402
-from bot import format_date, load_config, normalize_time, now  # noqa: E402
+import i18n  # noqa: E402
+from bot import load_config, normalize_time, now  # noqa: E402
 
 from . import menu_editor, settings_store as store  # noqa: E402
 
@@ -66,21 +67,38 @@ def to_minutes(hm: str) -> int:
     return int(hours) * 60 + int(minutes)
 
 
-# Words in the booking notes that deserve a visible flag during service.
-NOTE_TAGS = {
-    "Allergie": ("allerg", "celiac", "glutine", "lattosio", "intoller", "noci", "arachidi", "crostacei", "vegan"),
-    "Bambini": ("bambin", "seggiolon", "passeggino", "neonat", "bimb"),
-    "Festa": ("compleann", "anniversari", "festa", "laurea", "torta"),
-}
+def lang() -> str:
+    """The dashboard's language (Impostazioni), also used for the owner's notifications."""
+    return i18n.panel_language(load_config())
+
+
+def _(key: str, **params) -> str:
+    return i18n.t(lang(), key, **params)
+
+
+def _n(key: str, n: int, **params) -> str:
+    return i18n.tn(lang(), key, n, **params)
+
+
+def format_date(d: date) -> str:
+    return i18n.format_date(d, lang())
+
+
+# Tags flagged in booking notes during service; keywords come from every locale file,
+# so "allergia", "allergic" and "Allergie" are all recognised whatever the panel language.
+NOTE_TAGS = ("allergie", "bambini", "festa")
 
 
 def note_tags(notes: str | None) -> list[str]:
     text = (notes or "").lower()
-    return [tag for tag, words in NOTE_TAGS.items() if any(w in text for w in words)]
+    keywords = i18n.note_keywords()
+    return [tag for tag in NOTE_TAGS if any(w in text for w in keywords.get(tag, ()))]
 
 
 AVATAR_TONES = 6
-_NAME_FILLERS = {"e", "di", "de", "da", "del", "della", "la", "il", "sig", "sigra", "signor", "signora", "famiglia", "fam"}
+# Words skipped when picking initials ("Famiglia Bianchi" -> "B", "Marco e Giulia" -> "MG").
+_NAME_FILLERS = {"e", "di", "de", "da", "del", "della", "la", "il", "sig", "sigra", "signor", "signora", "famiglia", "fam",
+                 "and", "family", "mr", "mrs", "ms", "und", "familie", "herr", "frau", "et", "famille", "y", "familia"}
 
 
 def avatar(name: str) -> dict:
@@ -101,19 +119,19 @@ def service_status() -> dict | None:
     restaurant = load_config()["restaurant"]
     current = now()
     if current.weekday() in restaurant.get("closed_weekdays", []):
-        return {"label": "Sala chiusa oggi", "kind": "closed"}
+        return {"label": _("dash.status_closed"), "kind": "closed"}
     times = sorted(restaurant.get("booking_times") or [])
     if not times:
         return None
     first, last = to_minutes(times[0]), to_minutes(times[-1])
     turn = restaurant.get("table_turn_minutes") or menu_editor.DEFAULT_TURN_MINUTES
-    meal = "serale" if first >= 17 * 60 else "di pranzo"
+    meal = _("dash.meal_dinner") if first >= 17 * 60 else _("dash.meal_lunch")
     minute = current.hour * 60 + current.minute
     if minute < first - 30:
-        return {"label": f"Servizio {meal} dalle {times[0]}", "kind": "before"}
+        return {"label": _("dash.status_before", meal=meal, time=times[0]), "kind": "before"}
     if minute <= last + turn:
-        return {"label": f"Servizio {meal} in corso", "kind": "live"}
-    return {"label": "Servizio concluso", "kind": "after"}
+        return {"label": _("dash.status_live", meal=meal), "kind": "live"}
+    return {"label": _("dash.status_after"), "kind": "after"}
 
 
 def asset_version() -> str:
@@ -129,8 +147,29 @@ def logo_url() -> str | None:
 
 
 templates = Jinja2Templates(directory=HERE / "templates")
+def js_strings() -> dict:
+    """Texts used by app.js and menu.js, plus what the menu preview needs to mimic the bot."""
+    customer = i18n.default_language()
+    return {
+        **i18n.raw(lang(), "dash.js"),
+        "lang": lang(),
+        "preview_title": i18n.t(customer, "bot.menu_title", restaurant="{restaurant}"),
+        "preview_footer": i18n.t(customer, "bot.menu_footer"),
+        "preview_price": i18n.t(customer, "common.price", amount="{amount}"),
+        "preview_decimal": i18n.t(customer, "common.decimal"),
+    }
+
+
 templates.env.globals.update(
+    _=_,
+    _n=_n,
+    lang=lang,
+    js_strings=js_strings,
     format_date=format_date,
+    day_month=lambda d: i18n.format_day_month(d, lang()),
+    weekday=lambda d: i18n.weekday_name(d, lang()),
+    # e.g. "Italian" in an English panel: the language customers get by default
+    customer_language_name=lambda: _(f"dash.language_names.{i18n.default_language()}"),
     now_hm=lambda: now().strftime("%H:%M"),
     day_iso=lambda offset=0: (now().date() + timedelta(days=offset)).isoformat(),
     booking_slots=lambda: load_config()["restaurant"]["booking_times"],
@@ -141,7 +180,9 @@ templates.env.filters.update(
     note_tags=note_tags,
     avatar=avatar,
     minutes_until=minutes_until,
-    price_input=lambda p: f"{p:.2f}".replace(".", ",") if isinstance(p, (int, float)) else (p or ""),
+    price_input=lambda p: i18n.format_amount(p, lang()) if isinstance(p, (int, float)) else (p or ""),
+    # Jinja's capitalize lowercases the rest ("Friday, october 2"): only touch the first letter.
+    ucfirst=i18n.ucfirst,
 )
 
 
@@ -166,15 +207,15 @@ def wants_json(request: Request) -> bool:
 @app.exception_handler(LoginRequired)
 async def redirect_to_login(request: Request, exc: LoginRequired):
     if wants_json(request):
-        return JSONResponse({"ok": False, "message": "Sessione scaduta: accedi di nuovo."}, status_code=401)
+        return JSONResponse({"ok": False, "message": _("dash.msg.session_expired_login")}, status_code=401)
     return RedirectResponse("/login", status_code=303)
 
 
 @app.exception_handler(InvalidCSRF)
 async def invalid_csrf(request: Request, exc: InvalidCSRF):
     if wants_json(request):
-        return JSONResponse({"ok": False, "message": "Sessione scaduta: ricarica la pagina."}, status_code=403)
-    flash(request, "Sessione scaduta: riprova.", "error")
+        return JSONResponse({"ok": False, "message": _("dash.msg.session_expired_reload")}, status_code=403)
+    flash(request, _("dash.msg.session_expired"), "error")
     return RedirectResponse(request.url.path, status_code=303)
 
 
@@ -210,7 +251,7 @@ def render(request: Request, template: str, status_code: int = 200, **context):
             "highlight_id": request.session.pop("highlight", None),
             "logo_url": logo_url(),
             "status": service_status(),
-            "today_long": format_date(now().date()).capitalize(),
+            "today_long": i18n.ucfirst(format_date(now().date())),
             **context,
         },
         status_code=status_code,
@@ -243,7 +284,7 @@ async def login(request: Request):
         request.session["csrf"] = secrets.token_urlsafe(32)
         return redirect("/")
     await asyncio.sleep(1)  # slow down password guessing
-    return render(request, "login.html", status_code=401, error="Password errata.")
+    return render(request, "login.html", status_code=401, error=_("dash.wrong_password"))
 
 
 @app.post("/logout")
@@ -310,7 +351,7 @@ def room_load(confirmed: list[dict], restaurant: dict, live: bool) -> dict:
         "slots": slots,
         "capacity": capacity,
         "tables": tables,
-        "turn_label": (f"{turn // 60} {'ora' if turn == 60 else 'ore'}" if turn % 60 == 0 else f"{turn} minuti"),
+        "turn_label": _n("dash.turn_hours", turn // 60) if turn % 60 == 0 else _("dash.turn_minutes", n=turn),
         "peak": peak if peak and peak["covers"] else None,
         "peak_pct": round(peak["covers"] / capacity * 100) if capacity and peak else None,
     }
@@ -322,17 +363,14 @@ def notes_summary(confirmed: list[dict]) -> list[str]:
     for b in confirmed:
         for tag in note_tags(b["notes"]):
             counts[tag] += 1
+    counts["telefono"] = sum(1 for b in confirmed if b["source"] == "manual")
     labels = []
-    if counts["Allergie"]:
-        labels.append(("allergie", f"{counts['Allergie']} con allergie"))
-    if counts["Bambini"]:
-        labels.append(("bambini", f"{counts['Bambini']} con bambini"))
-    if counts["Festa"]:
-        n = counts["Festa"]
-        labels.append(("festa", f"{n} {'occasione speciale' if n == 1 else 'occasioni speciali'}"))
-    phone = sum(1 for b in confirmed if b["source"] == "manual")
-    if phone:
-        labels.append(("telefono", f"{phone} al telefono"))
+    for kind in ("allergie", "bambini", "festa", "telefono"):
+        n = counts[kind]
+        if n:
+            key = f"dash.summary_{kind}"
+            text = _n(key, n) if isinstance(i18n.raw(lang(), key), dict) else _(key, n=n)
+            labels.append((kind, text))
     return labels
 
 
@@ -377,7 +415,7 @@ async def bookings_state(day: str | None = None):
     try:
         state = board_state(parse_day(day))
     except ValueError:
-        return JSONResponse({"ok": False, "message": "Data non valida."}, status_code=400)
+        return JSONResponse({"ok": False, "message": _("dash.msg.invalid_date")}, status_code=400)
     return JSONResponse(state, headers={"Cache-Control": "no-store"})
 
 
@@ -390,7 +428,7 @@ async def bookings_page(request: Request, day: str | None = None):
     try:
         selected = parse_day(day)
     except ValueError:
-        flash(request, "Data non valida.", "error")
+        flash(request, _("dash.msg.invalid_date"), "error")
         return redirect("/")
 
     shown_day = selected or today
@@ -452,7 +490,7 @@ async def cancel_page(request: Request, booking_id: int, next: str | None = None
     """Confirmation page, used when JavaScript is off (otherwise the list offers 'Annulla')."""
     booking = get_booking_or_none(booking_id)
     if not booking or booking["status"] != "confirmed":
-        flash(request, "Prenotazione non trovata o già cancellata.", "error")
+        flash(request, _("dash.msg.not_found"), "error")
         return redirect(safe_next(next))
     return render(request, "cancel.html", nav="bookings", booking=booking, next=safe_next(next))
 
@@ -470,28 +508,26 @@ async def cancel_booking(request: Request, booking_id: int):
         return redirect(back)
 
     if not booking or not db.cancel_booking_by_owner(booking_id):
-        return respond("error", "Prenotazione non trovata o già cancellata.", ok=False, status=409)
+        return respond("error", _("dash.msg.not_found"), ok=False, status=409)
     logger.info("Booking #%s cancelled from the dashboard", booking_id)
 
-    when = f"{format_date(date.fromisoformat(booking['date']))} alle {booking['time']}"
     if booking["source"] == "manual" or booking["user_id"] == db.MANUAL_USER_ID:
         contact = f" ({booking['phone']})" if booking["phone"] else ""
-        return respond("warn", f"Prenotazione cancellata. Ricordati di avvisare {booking['name']}{contact}.")
+        return respond("warn", _("dash.msg.cancelled_manual", name=booking["name"], contact=contact))
 
+    # The customer is told in their own language (saved with the booking).
+    customer = booking.get("language") or db.get_user_language(booking["user_id"]) or i18n.default_language()
     info = load_config()["restaurant"]
-    phone = f"\nPer informazioni puoi chiamarci al {escape(info['phone'])}." if info.get("phone") else ""
-    sent = await notify_customer(
-        booking["user_id"],
-        f"😔 Ci dispiace, la tua prenotazione <b>n. {booking_id}</b> per {when} "
-        f"({booking['people']} persone) è stata cancellata dal ristorante.{phone}",
+    text = i18n.t(
+        customer, "bot.cancelled_by_restaurant", id=booking_id,
+        date=i18n.format_date(date.fromisoformat(booking["date"]), customer), time=booking["time"],
+        people=i18n.tn(customer, "common.people", booking["people"]),
     )
-    if sent:
-        return respond("ok", f"Prenotazione di {booking['name']} cancellata. Il cliente è stato avvisato su Telegram.")
-    return respond(
-        "warn",
-        f"Prenotazione di {booking['name']} cancellata, ma non è stato possibile avvisare il cliente "
-        "su Telegram: contattalo tu, se possibile.",
-    )
+    if info.get("phone"):
+        text += i18n.t(customer, "bot.call_us", phone=escape(info["phone"]))
+    if await notify_customer(booking["user_id"], text):
+        return respond("ok", _("dash.msg.cancelled_notified", name=booking["name"]))
+    return respond("warn", _("dash.msg.cancelled_not_notified", name=booking["name"]))
 
 
 # --- Manual booking ---
@@ -519,22 +555,22 @@ async def new_booking(request: Request):
     errors = []
 
     if not 2 <= len(values["name"]) <= 50:
-        errors.append("Inserisci un nome tra 2 e 50 caratteri.")
+        errors.append(_("dash.msg.name_length"))
     people = int(values["people"]) if values["people"].isdigit() else 0
     if not 1 <= people <= MAX_MANUAL_PEOPLE:
-        errors.append(f"Il numero di persone deve essere tra 1 e {MAX_MANUAL_PEOPLE}.")
+        errors.append(_("dash.msg.people_range", max=MAX_MANUAL_PEOPLE))
     try:
         booking_date = date.fromisoformat(values["date"])
         if booking_date < now().date():
-            errors.append("La data è già passata.")
+            errors.append(_("dash.msg.date_past"))
     except ValueError:
         booking_date = None
-        errors.append("Inserisci una data valida.")
+        errors.append(_("dash.msg.date_invalid"))
     booking_time = normalize_time(values["time"])
     if booking_time is None:
-        errors.append("Inserisci un orario valido, es. 20:30.")
+        errors.append(_("dash.msg.time_invalid"))
     if len(values["notes"]) > 300:
-        errors.append("Le note possono avere al massimo 300 caratteri.")
+        errors.append(_("dash.msg.notes_long"))
 
     if errors:
         return render(request, "booking_new.html", status_code=400, **booking_form_context(values, errors))
@@ -551,9 +587,10 @@ async def new_booking(request: Request):
         source="manual",
     )
     logger.info("Manual booking #%s added from the dashboard", booking_id)
-    message = f"Prenotazione n. {booking_id} aggiunta: {values['name']}, {people} persone, {format_date(booking_date)} alle {booking_time}."
+    message = _("dash.msg.booking_added", id=booking_id, name=values["name"], people=_n("common.people", people),
+                date=format_date(booking_date), time=booking_time)
     if booking_date.weekday() in load_config()["restaurant"].get("closed_weekdays", []):
-        flash(request, message + " Attenzione: è un giorno di chiusura.", "warn")
+        flash(request, message + _("dash.msg.closed_day_warning"), "warn")
     else:
         flash(request, message)
     request.session["highlight"] = booking_id  # the new row flashes once in the list
@@ -579,7 +616,7 @@ async def save_menu(request: Request):
         )
     menu_editor.save_config(config)
     logger.info("menu.json updated from the dashboard")
-    flash(request, "Menù salvato. Il bot lo usa già, non serve riavviarlo.")
+    flash(request, _("dash.msg.menu_saved"))
     return redirect("/menu")
 
 
@@ -594,6 +631,9 @@ def settings_context(form: dict, errors: list[str] | None = None, password_error
         "password_errors": password_errors or [],
         "custom_password": store.has_custom_password(),
         "max_logo_label": f"{store.MAX_LOGO_BYTES // (1024 * 1024)} MB",
+        # Native names without the flag emoji (Windows browsers draw flags as two letters)
+        "panel_languages": [(code, i18n.t(code, "language_name").split(" ", 1)[-1]) for code in i18n.PANEL_LANGUAGES],
+        "min_password": store.MIN_PASSWORD_LENGTH,
     }
 
 
@@ -608,10 +648,10 @@ async def read_logo(upload) -> tuple[bytes | None, str | None, str | None]:
         return None, None, None
     content = await upload.read(store.MAX_LOGO_BYTES + 1)
     if len(content) > store.MAX_LOGO_BYTES:
-        return None, None, f"Il logo è troppo pesante: massimo {store.MAX_LOGO_BYTES // (1024 * 1024)} MB."
+        return None, None, _("dash.msg.logo_too_big", size=f"{store.MAX_LOGO_BYTES // (1024 * 1024)} MB")
     ext = store.detect_logo_type(content)
     if ext is None:
-        return None, None, "Il logo deve essere un'immagine PNG, JPG o WebP."
+        return None, None, _("dash.msg.logo_type")
     return content, ext, None
 
 
@@ -631,7 +671,7 @@ async def save_settings(request: Request):
     elif form.get("remove_logo"):
         store.remove_logo()
     logger.info("Settings updated from the dashboard")
-    flash(request, "Impostazioni salvate.")
+    flash(request, _("dash.msg.settings_saved"))
     return redirect("/settings")
 
 
@@ -640,14 +680,15 @@ async def change_password(request: Request):
     form = await read_form(request)
     current, new, confirm = (str(form.get(k, "")) for k in ("current", "new", "confirm"))
     errors = []
-    if not store.check_password(current, PASSWORD):
-        errors.append("La password attuale non è corretta.")
+    wrong_current = not store.check_password(current, PASSWORD)
+    if wrong_current:
+        errors.append(_("dash.msg.password_wrong"))
     if len(new) < store.MIN_PASSWORD_LENGTH:
-        errors.append(f"La nuova password deve avere almeno {store.MIN_PASSWORD_LENGTH} caratteri.")
+        errors.append(_("dash.msg.password_short", n=store.MIN_PASSWORD_LENGTH))
     elif new != confirm:
-        errors.append("Le due nuove password non coincidono.")
+        errors.append(_("dash.msg.password_mismatch"))
     if errors:
-        if errors[0].startswith("La password attuale"):
+        if wrong_current:
             await asyncio.sleep(1)
         return render(
             request, "settings.html", status_code=400,
@@ -657,7 +698,7 @@ async def change_password(request: Request):
     # Keep this session, every other one is logged out by the new fingerprint.
     request.session["pw"] = store.credential_fingerprint(PASSWORD)
     logger.info("Dashboard password changed")
-    flash(request, "Password cambiata. Le altre sessioni aperte sono state chiuse.")
+    flash(request, _("dash.msg.password_changed"))
     return redirect("/settings")
 
 

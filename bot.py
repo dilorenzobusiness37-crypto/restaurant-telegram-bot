@@ -1,4 +1,9 @@
-"""Telegram bot for a restaurant: menu, info and table bookings."""
+"""Telegram bot for a restaurant: menu, info and table bookings.
+
+Customers are answered in their phone's language (it, en, fr, de, es) or the one
+they pick with /lingua; the owner's messages use the dashboard's language.
+All texts live in locales/<language>.json.
+"""
 
 import json
 import logging
@@ -17,7 +22,6 @@ from telegram import (
     BotCommandScopeChat,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    KeyboardButton,
     ReplyKeyboardMarkup,
     Update,
 )
@@ -34,6 +38,8 @@ from telegram.ext import (
 )
 
 import database as db
+import i18n
+from i18n import t, tn
 
 # --------------------------------------------------------------------------- #
 # Configuration
@@ -61,50 +67,30 @@ logging.basicConfig(
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger("restaurant-bot")
 
-# Main keyboard buttons
-BTN_MENU = "📖 Menù"
-BTN_BOOK = "📅 Prenota un tavolo"
-BTN_INFO = "📍 Orari e indirizzo"
-BTN_MY_BOOKINGS = "🗂 Le mie prenotazioni"
-
-# Booking flow buttons
-BTN_CANCEL = "❌ Annulla"
-BTN_TODAY = "Oggi"
-BTN_TOMORROW = "Domani"
-BTN_NO_NOTES = "Nessuna nota"
-BTN_CONFIRM = "✅ Conferma"
-BTN_RESTART = "🔄 Ricomincia"
-
 # Conversation states
 NAME, PEOPLE, DATE, TIME, NOTES, CONFIRM = range(6)
-
-WEEKDAYS_IT = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]
-MONTHS_IT = [
-    "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
-    "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre",
-]
-
-MAIN_KEYBOARD = ReplyKeyboardMarkup(
-    [[BTN_MENU, BTN_BOOK], [BTN_INFO, BTN_MY_BOOKINGS]],
-    resize_keyboard=True,
-)
 
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
 
 _config_cache: dict | None = None
+_config_stamp: tuple | None = None
 
 
 def load_config() -> dict:
-    """Load menu.json on every call so edits apply without restarting the bot.
+    """Return menu.json, re-reading it whenever the file changes (no restart needed).
 
     If the file is broken (e.g. a JSON typo), keep using the last valid version.
     """
-    global _config_cache
+    global _config_cache, _config_stamp
     try:
-        with open(MENU_PATH, encoding="utf-8") as f:
-            _config_cache = json.load(f)
+        stat = MENU_PATH.stat()
+        stamp = (str(MENU_PATH), stat.st_mtime_ns, stat.st_size)
+        if stamp != _config_stamp or _config_cache is None:
+            with open(MENU_PATH, encoding="utf-8") as f:
+                _config_cache = json.load(f)
+            _config_stamp = stamp
     except (OSError, json.JSONDecodeError) as exc:
         if _config_cache is None:
             raise
@@ -116,24 +102,44 @@ def now() -> datetime:
     return datetime.now(TIMEZONE)
 
 
-def format_date(d: date) -> str:
-    """e.g. 'venerdì 3 ottobre 2026'"""
-    return f"{WEEKDAYS_IT[d.weekday()]} {d.day} {MONTHS_IT[d.month - 1]} {d.year}"
+def user_language(update: Update) -> str:
+    """Language chosen with /lingua, else the phone's language, else the restaurant default."""
+    user = update.effective_user
+    return (
+        db.get_user_language(user.id)
+        or i18n.normalize(getattr(user, "language_code", None))
+        or i18n.default_language()
+    )
 
 
-def format_price(price: float) -> str:
-    return f"€ {price:.2f}".replace(".", ",")
+def owner_language() -> str:
+    """The owner reads notifications in the dashboard's language."""
+    return i18n.panel_language(load_config())
+
+
+def main_keyboard(lang: str) -> ReplyKeyboardMarkup:
+    b = lambda key: t(lang, f"bot.btn.{key}")  # noqa: E731
+    return ReplyKeyboardMarkup([[b("menu"), b("book")], [b("info"), b("my_bookings")]], resize_keyboard=True)
+
+
+def cancel_keyboard(lang: str, rows: list[list[str]] | None = None) -> ReplyKeyboardMarkup:
+    """Step keyboard with a cancel button always at the bottom."""
+    return ReplyKeyboardMarkup((rows or []) + [[t(lang, "bot.btn.cancel")]], resize_keyboard=True)
+
+
+def is_label(text: str, key: str) -> bool:
+    """True if text is the label of button `key` in any language."""
+    return text.strip().lower() in {label.lower() for label in i18n.all_labels(key)}
 
 
 def parse_date(text: str, today: date) -> date | None:
-    """Parse 'oggi', 'domani', 'dd/mm' or 'dd/mm/yyyy' (also with '-' or '.')."""
-    text = text.strip().lower()
-    if text == BTN_TODAY.lower():
+    """Parse the Today/Tomorrow buttons (any language), 'dd/mm' or 'dd/mm/yyyy' (also with '-' or '.')."""
+    if is_label(text, "bot.btn.today"):
         return today
-    if text == BTN_TOMORROW.lower():
+    if is_label(text, "bot.btn.tomorrow"):
         return today + timedelta(days=1)
 
-    match = re.fullmatch(r"(\d{1,2})[/\-.](\d{1,2})(?:[/\-.](\d{2}|\d{4}))?", text)
+    match = re.fullmatch(r"(\d{1,2})[/\-.](\d{1,2})(?:[/\-.](\d{2}|\d{4}))?", text.strip())
     if not match:
         return None
     day, month, year = match.groups()
@@ -170,20 +176,15 @@ def available_times(booking_date: date, config: dict) -> list[str]:
     return [s for s in slots if s > current.strftime("%H:%M")]
 
 
-def booking_summary(data: dict) -> str:
-    notes = escape(data["notes"]) if data.get("notes") else "—"
-    return (
-        f"👤 <b>Nome:</b> {escape(data['name'])}\n"
-        f"👥 <b>Persone:</b> {data['people']}\n"
-        f"📅 <b>Data:</b> {format_date(data['date'])}\n"
-        f"🕗 <b>Orario:</b> {data['time']}\n"
-        f"📝 <b>Note:</b> {notes}"
+def booking_summary(data: dict, lang: str) -> str:
+    return t(
+        lang, "bot.summary",
+        name=escape(data["name"]),
+        people=data["people"],
+        date=i18n.format_date(data["date"], lang),
+        time=data["time"],
+        notes=escape(data["notes"]) if data.get("notes") else "—",
     )
-
-
-def cancel_keyboard(rows: list[list[str]] | None = None) -> ReplyKeyboardMarkup:
-    """Step keyboard with an 'Annulla' button always at the bottom."""
-    return ReplyKeyboardMarkup((rows or []) + [[BTN_CANCEL]], resize_keyboard=True)
 
 
 async def notify_owner(context: ContextTypes.DEFAULT_TYPE, text: str) -> None:
@@ -212,79 +213,96 @@ def user_mention(update: Update) -> str:
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
-    config = load_config()
-    first_name = escape(update.effective_user.first_name or "")
+    lang = user_language(update)
     await update.message.reply_text(
-        f"Ciao {first_name}! 👋\n"
-        f"Benvenuto da <b>{escape(config['restaurant']['name'])}</b>.\n\n"
-        "Da qui puoi consultare il menù, prenotare un tavolo e gestire le tue prenotazioni.\n"
-        "Scegli un'opzione qui sotto 👇",
+        t(lang, "bot.start",
+          name=escape(update.effective_user.first_name or ""),
+          restaurant=escape(load_config()["restaurant"]["name"])),
         parse_mode=ParseMode.HTML,
-        reply_markup=MAIN_KEYBOARD,
+        reply_markup=main_keyboard(lang),
     )
     return ConversationHandler.END
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    text = (
-        "Ecco cosa posso fare:\n\n"
-        f"{BTN_MENU} – consulta il menù\n"
-        f"{BTN_BOOK} – prenota in pochi passaggi\n"
-        f"{BTN_INFO} – dove siamo e quando siamo aperti\n"
-        f"{BTN_MY_BOOKINGS} – vedi o cancella le tue prenotazioni\n\n"
-        "Comandi: /start, /prenota, /menu, /info, /prenotazioni, /annulla, /mioid"
-    )
+    lang = user_language(update)
+    text = t(lang, "bot.help", **{k: t(lang, f"bot.btn.{k}") for k in ("menu", "book", "info", "my_bookings")})
     if is_owner(update):
-        text += (
-            "\n\n👨‍🍳 Comandi titolare:\n"
-            "/oggi – prenotazioni di oggi\n"
-            "/settimana – prenotazioni dei prossimi 7 giorni"
-        )
-    await update.message.reply_text(text, reply_markup=MAIN_KEYBOARD)
+        text += t(lang, "bot.help_owner")
+    await update.message.reply_text(text, reply_markup=main_keyboard(lang))
 
 
 async def my_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
-        f"Il tuo chat_id è: <code>{update.effective_chat.id}</code>\n\n"
-        "Se sei il titolare, copialo nel file <code>.env</code> come "
-        "<code>OWNER_CHAT_ID</code> e riavvia il bot per ricevere le notifiche delle prenotazioni.",
+        t(user_language(update), "bot.my_id", chat_id=update.effective_chat.id),
         parse_mode=ParseMode.HTML,
     )
 
 
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    lang = user_language(update)
     config = load_config()
-    parts = [f"📖 <b>Menù – {escape(config['restaurant']['name'])}</b>"]
+    # Dish and category names come from menu.json and are not translated.
+    parts = [t(lang, "bot.menu_title", restaurant=escape(config["restaurant"]["name"]))]
     for section in config["menu"]:
         lines = [f"\n{section.get('emoji', '')} <b>{escape(section['category'].upper())}</b>"]
         for item in section["items"]:
-            lines.append(f"• {escape(item['name'])} — <b>{format_price(item['price'])}</b>")
+            lines.append(f"• {escape(item['name'])} — <b>{i18n.format_price(item['price'], lang)}</b>")
             if item.get("description"):
                 lines.append(f"   <i>{escape(item['description'])}</i>")
         parts.append("\n".join(lines))
-    parts.append("\n<i>Per allergeni e intolleranze chiedi al nostro personale.</i>")
+    parts.append("\n" + t(lang, "bot.menu_footer"))
     await update.message.reply_text(
-        "\n".join(parts), parse_mode=ParseMode.HTML, reply_markup=MAIN_KEYBOARD
+        "\n".join(parts), parse_mode=ParseMode.HTML, reply_markup=main_keyboard(lang)
     )
 
 
 async def show_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    lang = user_language(update)
     info = load_config()["restaurant"]
     hours = "\n".join(f"• {escape(h)}" for h in info["opening_hours"])
     text = (
         f"🍽 <b>{escape(info['name'])}</b>\n\n"
-        f"🕐 <b>Orari</b>\n{hours}\n\n"
-        f"📍 <b>Indirizzo</b>\n{escape(info['address'])}\n"
+        f"🕐 <b>{t(lang, 'bot.info_hours')}</b>\n{hours}\n\n"
+        f"📍 <b>{t(lang, 'bot.info_address')}</b>\n{escape(info['address'])}\n"
     )
     if info.get("maps_url"):
-        text += f'<a href="{escape(info["maps_url"])}">Apri in Google Maps</a>\n'
+        text += f'<a href="{escape(info["maps_url"])}">{t(lang, "bot.info_maps")}</a>\n'
     if info.get("phone"):
-        text += f"\n📞 <b>Telefono</b>\n{escape(info['phone'])}"
+        text += f"\n📞 <b>{t(lang, 'bot.info_phone')}</b>\n{escape(info['phone'])}"
     await update.message.reply_text(
         text,
         parse_mode=ParseMode.HTML,
-        reply_markup=MAIN_KEYBOARD,
+        reply_markup=main_keyboard(lang),
         disable_web_page_preview=True,
+    )
+
+
+# --- Language ---
+
+
+async def choose_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    lang = user_language(update)
+    buttons = [
+        [InlineKeyboardButton(t(code, "language_name") + (" ✓" if code == lang else ""), callback_data=f"lang:{code}")]
+        for code in i18n.SUPPORTED
+    ]
+    await update.message.reply_text(t(lang, "bot.language_ask"), reply_markup=InlineKeyboardMarkup(buttons))
+
+
+async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    lang = query.data.split(":")[1]
+    if lang not in i18n.SUPPORTED:
+        await query.answer()
+        return
+    db.set_user_language(update.effective_user.id, lang)
+    logger.info("User %s chose language %s", update.effective_user.id, lang)
+    await query.answer()
+    await query.edit_message_text(t(lang, "language_name"))
+    # A new message carries the main keyboard in the new language.
+    await context.bot.send_message(
+        update.effective_chat.id, t(lang, "bot.language_set"), reply_markup=main_keyboard(lang)
     )
 
 
@@ -294,86 +312,75 @@ async def show_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def booking_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    lang = user_language(update)
     context.user_data["booking"] = {}
     first_name = update.effective_user.first_name
-    rows = [[first_name]] if first_name else None
     await update.message.reply_text(
-        "Perfetto, prenotiamo un tavolo! 🍽\n"
-        "Puoi annullare in qualsiasi momento con /annulla.\n\n"
-        "<b>1/5</b> – A che nome prenotiamo?",
+        t(lang, "bot.book_start"),
         parse_mode=ParseMode.HTML,
-        reply_markup=cancel_keyboard(rows),
+        reply_markup=cancel_keyboard(lang, [[first_name]] if first_name else None),
     )
     return NAME
 
 
 async def booking_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    lang = user_language(update)
     name = update.message.text.strip()
     if not 2 <= len(name) <= 50:
-        await update.message.reply_text("Inserisci un nome valido (tra 2 e 50 caratteri).")
+        await update.message.reply_text(t(lang, "bot.name_invalid"))
         return NAME
     context.user_data["booking"]["name"] = name
 
     await update.message.reply_text(
-        "<b>2/5</b> – Per quante persone?\n"
-        "Scegli un numero o scrivilo.",
+        t(lang, "bot.ask_people"),
         parse_mode=ParseMode.HTML,
-        reply_markup=cancel_keyboard([["1", "2", "3", "4"], ["5", "6", "7", "8"]]),
+        reply_markup=cancel_keyboard(lang, [["1", "2", "3", "4"], ["5", "6", "7", "8"]]),
     )
     return PEOPLE
 
 
 async def booking_people(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    lang = user_language(update)
     max_people = load_config()["restaurant"].get("max_people", 20)
     text = update.message.text.strip()
     if not text.isdigit() or not 1 <= int(text) <= max_people:
-        await update.message.reply_text(
-            f"Scrivi un numero di persone tra 1 e {max_people}.\n"
-            "Per gruppi più numerosi contattaci per telefono 📞"
-        )
+        await update.message.reply_text(t(lang, "bot.people_invalid", max=max_people))
         return PEOPLE
     context.user_data["booking"]["people"] = int(text)
 
+    today, tomorrow = t(lang, "bot.btn.today"), t(lang, "bot.btn.tomorrow")
     await update.message.reply_text(
-        "<b>3/5</b> – Per quale giorno?\n"
-        "Scegli <i>Oggi</i> o <i>Domani</i>, oppure scrivi una data (es. <code>25/12</code>).",
+        t(lang, "bot.ask_date", today=today, tomorrow=tomorrow),
         parse_mode=ParseMode.HTML,
-        reply_markup=cancel_keyboard([[BTN_TODAY, BTN_TOMORROW]]),
+        reply_markup=cancel_keyboard(lang, [[today, tomorrow]]),
     )
     return DATE
 
 
 async def booking_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    lang = user_language(update)
     config = load_config()
     today = now().date()
     chosen = parse_date(update.message.text, today)
 
     if chosen is None:
-        await update.message.reply_text(
-            "Non ho capito la data 🤔\n"
-            "Scrivila nel formato <code>gg/mm</code> o <code>gg/mm/aaaa</code>, es. <code>25/12</code>.",
-            parse_mode=ParseMode.HTML,
-        )
+        await update.message.reply_text(t(lang, "bot.date_invalid"), parse_mode=ParseMode.HTML)
         return DATE
     if chosen < today:
-        await update.message.reply_text("Questa data è già passata. Scegline un'altra 🙂")
+        await update.message.reply_text(t(lang, "bot.date_past"))
         return DATE
     if chosen > today + timedelta(days=MAX_DAYS_AHEAD):
-        await update.message.reply_text(
-            f"Accettiamo prenotazioni fino a {MAX_DAYS_AHEAD} giorni in anticipo. Scegli una data più vicina."
-        )
+        await update.message.reply_text(t(lang, "bot.date_too_far", days=MAX_DAYS_AHEAD))
         return DATE
     if chosen.weekday() in config["restaurant"].get("closed_weekdays", []):
-        await update.message.reply_text(
-            f"Ci dispiace, di {WEEKDAYS_IT[chosen.weekday()]} siamo chiusi 😔 Scegli un altro giorno."
-        )
+        await update.message.reply_text(t(lang, "bot.date_closed", weekday=i18n.weekday_name(chosen, lang)))
         return DATE
 
     slots = available_times(chosen, config)
     if not slots:
         await update.message.reply_text(
-            "Per oggi non ci sono più orari disponibili. Scegli un altro giorno.",
-            reply_markup=cancel_keyboard([[BTN_TOMORROW]]),
+            t(lang, "bot.no_slots_today"),
+            reply_markup=cancel_keyboard(lang, [[t(lang, "bot.btn.tomorrow")]]),
         )
         return DATE
 
@@ -381,65 +388,58 @@ async def booking_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     # Show time slots two per row.
     rows = [slots[i : i + 2] for i in range(0, len(slots), 2)]
     await update.message.reply_text(
-        f"Hai scelto <b>{format_date(chosen)}</b>.\n\n<b>4/5</b> – A che ora?",
+        t(lang, "bot.ask_time", date=i18n.format_date(chosen, lang)),
         parse_mode=ParseMode.HTML,
-        reply_markup=cancel_keyboard(rows),
+        reply_markup=cancel_keyboard(lang, rows),
     )
     return TIME
 
 
 async def booking_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    lang = user_language(update)
     slots = available_times(context.user_data["booking"]["date"], load_config())
     chosen = normalize_time(update.message.text)
     if chosen not in slots:
-        await update.message.reply_text(
-            "Scegli uno degli orari disponibili con i bottoni qui sotto 👇\n"
-            f"Orari: {', '.join(slots)}"
-        )
+        await update.message.reply_text(t(lang, "bot.time_invalid", slots=", ".join(slots)))
         return TIME
     context.user_data["booking"]["time"] = chosen
 
+    no_notes = t(lang, "bot.btn.no_notes")
     await update.message.reply_text(
-        "<b>5/5</b> – Vuoi aggiungere una nota?\n"
-        "Ad esempio allergie, seggiolone, occasione speciale… "
-        "Scrivila oppure premi <i>Nessuna nota</i>.",
+        t(lang, "bot.ask_notes", no_notes=no_notes),
         parse_mode=ParseMode.HTML,
-        reply_markup=cancel_keyboard([[BTN_NO_NOTES]]),
+        reply_markup=cancel_keyboard(lang, [[no_notes]]),
     )
     return NOTES
 
 
 async def booking_notes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    lang = user_language(update)
     text = update.message.text.strip()
     if len(text) > MAX_NOTES_LENGTH:
-        await update.message.reply_text(
-            f"La nota è troppo lunga (max {MAX_NOTES_LENGTH} caratteri). Prova ad accorciarla."
-        )
+        await update.message.reply_text(t(lang, "bot.notes_too_long", max=MAX_NOTES_LENGTH))
         return NOTES
-    context.user_data["booking"]["notes"] = None if text == BTN_NO_NOTES else text
+    context.user_data["booking"]["notes"] = None if is_label(text, "bot.btn.no_notes") else text
 
     await update.message.reply_text(
-        "Ecco il riepilogo della tua prenotazione:\n\n"
-        f"{booking_summary(context.user_data['booking'])}\n\n"
-        "Confermi?",
+        t(lang, "bot.confirm_question", summary=booking_summary(context.user_data["booking"], lang)),
         parse_mode=ParseMode.HTML,
         reply_markup=ReplyKeyboardMarkup(
-            [[BTN_CONFIRM], [BTN_RESTART, BTN_CANCEL]], resize_keyboard=True
+            [[t(lang, "bot.btn.confirm")], [t(lang, "bot.btn.restart"), t(lang, "bot.btn.cancel")]],
+            resize_keyboard=True,
         ),
     )
     return CONFIRM
 
 
 async def booking_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    lang = user_language(update)
     data = context.user_data.pop("booking")
     user = update.effective_user
 
     # The chosen slot may have expired while the user was typing the notes.
     if data["time"] not in available_times(data["date"], load_config()):
-        await update.message.reply_text(
-            "Ops, nel frattempo l'orario scelto non è più disponibile. Ricominciamo 🙏",
-            reply_markup=MAIN_KEYBOARD,
-        )
+        await update.message.reply_text(t(lang, "bot.slot_gone"), reply_markup=main_keyboard(lang))
         return ConversationHandler.END
 
     booking_id = db.add_booking(
@@ -450,21 +450,20 @@ async def booking_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         booking_date=data["date"],
         booking_time=data["time"],
         notes=data.get("notes"),
+        language=lang,
     )
-    logger.info("New booking #%s by user %s", booking_id, user.id)
+    logger.info("New booking #%s by user %s (%s)", booking_id, user.id, lang)
 
     await update.message.reply_text(
-        f"🎉 <b>Prenotazione confermata!</b> (n. {booking_id})\n\n"
-        f"{booking_summary(data)}\n\n"
-        f"Ti aspettiamo! Se hai un imprevisto puoi cancellarla da «{BTN_MY_BOOKINGS}».",
+        t(lang, "bot.confirmed", id=booking_id, summary=booking_summary(data, lang),
+          my_bookings=t(lang, "bot.btn.my_bookings")),
         parse_mode=ParseMode.HTML,
-        reply_markup=MAIN_KEYBOARD,
+        reply_markup=main_keyboard(lang),
     )
+    owner = owner_language()
     await notify_owner(
         context,
-        f"🔔 <b>Nuova prenotazione</b> (n. {booking_id})\n\n"
-        f"{booking_summary(data)}\n\n"
-        f"Da: {user_mention(update)}",
+        t(owner, "owner.new_booking", id=booking_id, summary=booking_summary(data, owner), user=user_mention(update)),
     )
     return ConversationHandler.END
 
@@ -474,19 +473,15 @@ async def booking_restart(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def booking_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    lang = user_language(update)
     context.user_data.pop("booking", None)
-    await update.message.reply_text(
-        "Prenotazione annullata. Quando vuoi, sono qui 🙂", reply_markup=MAIN_KEYBOARD
-    )
+    await update.message.reply_text(t(lang, "bot.flow_cancelled"), reply_markup=main_keyboard(lang))
     return ConversationHandler.END
 
 
 async def booking_unexpected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Anything the current step can't handle (stickers, photos, unknown commands...)."""
-    await update.message.reply_text(
-        "Non ho capito 🤔 Rispondi alla domanda qui sopra usando i bottoni o scrivendo un testo.\n"
-        "Per interrompere la prenotazione usa /annulla."
-    )
+    await update.message.reply_text(t(user_language(update), "bot.unexpected"))
     # Returning None keeps the conversation in the current state.
 
 
@@ -496,89 +491,84 @@ async def booking_unexpected(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def my_bookings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    lang = user_language(update)
     bookings = db.get_upcoming_bookings(update.effective_user.id, now().date())
     if not bookings:
         await update.message.reply_text(
-            f"Non hai prenotazioni in programma.\nPremi «{BTN_BOOK}» per prenotare un tavolo!",
-            reply_markup=MAIN_KEYBOARD,
+            t(lang, "bot.my_none", book=t(lang, "bot.btn.book")), reply_markup=main_keyboard(lang)
         )
         return
 
-    lines = ["🗂 <b>Le tue prenotazioni</b>\n"]
+    lines = [t(lang, "bot.my_title")]
     buttons = []
     for b in bookings:
         d = date.fromisoformat(b["date"])
-        lines.append(
-            f"<b>n. {b['id']}</b> – {format_date(d)} alle {b['time']}\n"
-            f"   {b['people']} persone, a nome {escape(b['name'])}"
-        )
-        buttons.append(
-            [InlineKeyboardButton(
-                f"❌ Cancella n. {b['id']} ({d.strftime('%d/%m')} {b['time']})",
-                callback_data=f"cancel:{b['id']}",
-            )]
-        )
+        lines.append(t(lang, "bot.my_item", id=b["id"], date=i18n.format_date(d, lang), time=b["time"],
+                       people=tn(lang, "common.people", b["people"]), name=escape(b["name"])))
+        buttons.append([InlineKeyboardButton(
+            t(lang, "bot.my_cancel_button", id=b["id"], day=d.strftime("%d/%m"), time=b["time"]),
+            callback_data=f"cancel:{b['id']}",
+        )])
     await update.message.reply_text(
-        "\n".join(lines),
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(buttons),
+        "\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(buttons)
     )
 
 
 async def cancel_booking_ask(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """First tap on 'Cancella': ask for confirmation."""
+    """First tap on 'Cancel': ask for confirmation."""
+    lang = user_language(update)
     query = update.callback_query
     booking_id = int(query.data.split(":")[1])
     booking = db.get_booking(booking_id)
 
     if not booking or booking["user_id"] != update.effective_user.id or booking["status"] != "confirmed":
-        await query.answer("Prenotazione non trovata o già cancellata.", show_alert=True)
+        await query.answer(t(lang, "bot.not_found"), show_alert=True)
         return
     await query.answer()
     d = date.fromisoformat(booking["date"])
     await query.edit_message_text(
-        f"Vuoi davvero cancellare la prenotazione <b>n. {booking_id}</b> "
-        f"di {format_date(d)} alle {booking['time']}?",
+        t(lang, "bot.cancel_ask", id=booking_id, date=i18n.format_date(d, lang), time=booking["time"]),
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("Sì, cancella", callback_data=f"cancel_yes:{booking_id}"),
-            InlineKeyboardButton("No, tienila", callback_data="cancel_no"),
+            InlineKeyboardButton(t(lang, "bot.cancel_yes"), callback_data=f"cancel_yes:{booking_id}"),
+            InlineKeyboardButton(t(lang, "bot.cancel_no"), callback_data="cancel_no"),
         ]]),
     )
 
 
 async def cancel_booking_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    lang = user_language(update)
     query = update.callback_query
     booking_id = int(query.data.split(":")[1])
     booking = db.get_booking(booking_id)
 
     if not db.cancel_booking(booking_id, update.effective_user.id):
-        await query.answer("Prenotazione non trovata o già cancellata.", show_alert=True)
+        await query.answer(t(lang, "bot.not_found"), show_alert=True)
         return
-    await query.answer("Prenotazione cancellata")
+    await query.answer(t(lang, "bot.cancel_answer"))
     logger.info("Booking #%s cancelled by user %s", booking_id, update.effective_user.id)
 
     d = date.fromisoformat(booking["date"])
     await query.edit_message_text(
-        f"✅ La prenotazione n. {booking_id} di {format_date(d)} alle {booking['time']} è stata cancellata."
+        t(lang, "bot.cancel_done", id=booking_id, date=i18n.format_date(d, lang), time=booking["time"])
     )
+    owner = owner_language()
     await notify_owner(
         context,
-        f"🚫 <b>Prenotazione cancellata</b> (n. {booking_id})\n\n"
-        f"👤 {escape(booking['name'])} – {booking['people']} persone\n"
-        f"📅 {format_date(d)} alle {booking['time']}\n\n"
-        f"Da: {user_mention(update)}",
+        t(owner, "owner.cancelled_booking", id=booking_id, name=escape(booking["name"]),
+          people=tn(owner, "common.people", booking["people"]), date=i18n.format_date(d, owner),
+          time=booking["time"], user=user_mention(update)),
     )
 
 
 async def cancel_booking_abort(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("Ok, la prenotazione resta valida 👍")
+    await query.edit_message_text(t(user_language(update), "bot.cancel_kept"))
 
 
 # --------------------------------------------------------------------------- #
-# Owner commands
+# Owner commands (always in the dashboard's language)
 # --------------------------------------------------------------------------- #
 
 
@@ -593,28 +583,23 @@ def owner_only(handler):
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not is_owner(update):
             logger.info("User %s tried owner command %s", update.effective_user.id, update.message.text)
-            await update.message.reply_text(
-                "Questo comando non è disponibile.", reply_markup=MAIN_KEYBOARD
-            )
+            lang = user_language(update)
+            await update.message.reply_text(t(lang, "bot.owner_only"), reply_markup=main_keyboard(lang))
             return
         await handler(update, context)
 
     return wrapper
 
 
-def format_owner_booking(b) -> str:
+def format_owner_booking(b, lang: str) -> str:
     """One booking as seen by the owner: time, name, people, notes."""
-    line = f"🕗 <b>{b['time']}</b> · {escape(b['name'])} · {b['people']} pers. <i>(n. {b['id']})</i>"
+    line = t(lang, "owner.booking_line", time=b["time"], name=escape(b["name"]), people=b["people"], id=b["id"])
     if b["source"] == "manual":
         # Added from the dashboard, e.g. a phone call.
-        line += f"\n      📞 {escape(b['phone'] or 'al telefono')}"
+        line += f"\n      📞 {escape(b['phone'] or t(lang, 'owner.by_phone'))}"
     if b["notes"]:
         line += f"\n      📝 {escape(b['notes'])}"
     return line
-
-
-def plural(n: int, one: str, many: str) -> str:
-    return f"{n} {one if n == 1 else many}"
 
 
 async def reply_long(update: Update, text: str) -> None:
@@ -631,40 +616,29 @@ async def reply_long(update: Update, text: str) -> None:
 
 @owner_only
 async def owner_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    lang = owner_language()
     today = now().date()
     bookings = db.get_bookings_between(today, today)
-    header = f"📋 <b>Prenotazioni di oggi</b>\n{format_date(today)}"
+    header = t(lang, "owner.today_title", date=i18n.format_date(today, lang))
     if not bookings:
-        await update.message.reply_text(
-            f"{header}\n\nNessuna prenotazione per oggi.", parse_mode=ParseMode.HTML
-        )
+        await update.message.reply_text(f"{header}\n\n{t(lang, 'owner.today_none')}", parse_mode=ParseMode.HTML)
         return
 
     covers = sum(b["people"] for b in bookings)
-    await reply_long(
-        update,
-        "\n\n".join(
-            [header]
-            + [format_owner_booking(b) for b in bookings]
-            + [f"👥 <b>Totale: {plural(covers, 'coperto', 'coperti')}</b> "
-               f"({plural(len(bookings), 'prenotazione', 'prenotazioni')})"]
-        ),
-    )
+    total = t(lang, "owner.today_total", covers=tn(lang, "owner.covers", covers),
+              bookings=tn(lang, "owner.bookings", len(bookings)))
+    await reply_long(update, "\n\n".join([header] + [format_owner_booking(b, lang) for b in bookings] + [total]))
 
 
 @owner_only
 async def owner_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    lang = owner_language()
     today = now().date()
     last_day = today + timedelta(days=6)
     bookings = db.get_bookings_between(today, last_day)
-    header = (
-        f"🗓 <b>Prenotazioni dei prossimi 7 giorni</b>\n"
-        f"dal {today.strftime('%d/%m')} al {last_day.strftime('%d/%m')}"
-    )
+    header = t(lang, "owner.week_title", start=today.strftime("%d/%m"), end=last_day.strftime("%d/%m"))
     if not bookings:
-        await update.message.reply_text(
-            f"{header}\n\nNessuna prenotazione in questo periodo.", parse_mode=ParseMode.HTML
-        )
+        await update.message.reply_text(f"{header}\n\n{t(lang, 'owner.week_none')}", parse_mode=ParseMode.HTML)
         return
 
     by_day: dict[str, list] = {}
@@ -674,16 +648,14 @@ async def owner_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     blocks = [header]
     for day, day_bookings in by_day.items():
         covers = sum(b["people"] for b in day_bookings)
-        lines = [f"📅 <b>{format_date(date.fromisoformat(day)).capitalize()}</b>"]
-        lines += [format_owner_booking(b) for b in day_bookings]
-        lines.append(f"👥 Totale: <b>{plural(covers, 'coperto', 'coperti')}</b>")
+        lines = [f"📅 <b>{i18n.ucfirst(i18n.format_date(date.fromisoformat(day), lang))}</b>"]
+        lines += [format_owner_booking(b, lang) for b in day_bookings]
+        lines.append(t(lang, "owner.day_total", covers=tn(lang, "owner.covers", covers)))
         blocks.append("\n".join(lines))
 
     total = sum(b["people"] for b in bookings)
-    blocks.append(
-        f"<b>Totale settimana: {plural(total, 'coperto', 'coperti')}</b> "
-        f"({plural(len(bookings), 'prenotazione', 'prenotazioni')})"
-    )
+    blocks.append(t(lang, "owner.week_total", covers=tn(lang, "owner.covers", total),
+                    bookings=tn(lang, "owner.bookings", len(bookings))))
     await reply_long(update, "\n\n".join(blocks))
 
 
@@ -693,62 +665,63 @@ async def owner_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 async def nothing_to_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    lang = user_language(update)
     await update.message.reply_text(
-        "Non c'è nessuna prenotazione in corso da annullare.\n"
-        f"Per cancellare una prenotazione già confermata vai su «{BTN_MY_BOOKINGS}».",
-        reply_markup=MAIN_KEYBOARD,
+        t(lang, "bot.nothing_to_cancel", my_bookings=t(lang, "bot.btn.my_bookings")),
+        reply_markup=main_keyboard(lang),
     )
 
 
 async def unknown_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
-        "Non ho capito 🤔 Usa i bottoni qui sotto per scegliere cosa fare, "
-        "oppure scrivi /help per vedere tutti i comandi.",
-        reply_markup=MAIN_KEYBOARD,
-    )
+    lang = user_language(update)
+    await update.message.reply_text(t(lang, "bot.unknown"), reply_markup=main_keyboard(lang))
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.error("Unhandled error while processing an update", exc_info=context.error)
     if isinstance(update, Update) and update.effective_message:
         try:
-            await update.effective_message.reply_text(
-                "Si è verificato un errore imprevisto 😓 Riprova tra poco oppure scrivi /start.",
-                reply_markup=MAIN_KEYBOARD,
-            )
+            lang = user_language(update) if update.effective_user else i18n.default_language()
+            await update.effective_message.reply_text(t(lang, "bot.error"), reply_markup=main_keyboard(lang))
         except Exception:
             logger.exception("Could not send error message to user")
 
 
-def button(text: str) -> filters.MessageFilter:
-    """Filter matching exactly the text of a keyboard button."""
-    return filters.Regex(f"^{re.escape(text)}$")
+def button(key: str) -> filters.MessageFilter:
+    """Filter matching a keyboard button's text in any supported language."""
+    return filters.Regex(i18n.labels_regex(f"bot.btn.{key}"))
+
+
+CUSTOMER_COMMANDS = ("start", "prenota", "menu", "info", "prenotazioni", "annulla", "lingua", "mioid", "help")
+# Every command also answers to its international name (/book, /stop...); each language
+# shows its own names in the '/' menu and in the texts (locales: bot.command_names).
+ALIASES = {"prenota": "book", "prenotazioni": "bookings", "annulla": "stop", "lingua": "language",
+           "mioid": "myid", "oggi": "today", "settimana": "week"}
+
+
+def names(command: str) -> list[str]:
+    return [command, ALIASES[command]] if command in ALIASES else [command]
+
+
+def command_list(lang: str, owner: bool = False) -> list[BotCommand]:
+    commands = []
+    for name in (("oggi", "settimana") if owner else ()) + CUSTOMER_COMMANDS:
+        shown = i18n.raw(lang, "bot.command_names").get(name, name)
+        commands.append(BotCommand(shown, t(lang, f"bot.commands.{name}")))
+    return commands
 
 
 async def post_init(application: Application) -> None:
-    """Register the command list shown in Telegram's '/' menu."""
-    commands = [
-        BotCommand("start", "Menu principale"),
-        BotCommand("prenota", "Prenota un tavolo"),
-        BotCommand("menu", "Consulta il menù"),
-        BotCommand("info", "Orari e indirizzo"),
-        BotCommand("prenotazioni", "Le mie prenotazioni"),
-        BotCommand("annulla", "Annulla la prenotazione in corso"),
-        BotCommand("mioid", "Mostra il tuo chat_id"),
-        BotCommand("help", "Aiuto"),
-    ]
-    await application.bot.set_my_commands(commands)
+    """Register the '/' menu: descriptions in each supported language."""
+    bot = application.bot
+    await bot.set_my_commands(command_list(i18n.default_language()))
+    for lang in i18n.SUPPORTED:
+        await bot.set_my_commands(command_list(lang), language_code=lang)
 
-    # The owner also sees the reserved commands in their '/' menu.
+    # The owner also sees the reserved commands, in the dashboard's language.
     if OWNER_CHAT_ID:
-        owner_commands = [
-            BotCommand("oggi", "Prenotazioni di oggi"),
-            BotCommand("settimana", "Prenotazioni dei prossimi 7 giorni"),
-        ]
         try:
-            await application.bot.set_my_commands(
-                owner_commands + commands, scope=BotCommandScopeChat(OWNER_CHAT_ID)
-            )
+            await bot.set_my_commands(command_list(owner_language(), owner=True), scope=BotCommandScopeChat(OWNER_CHAT_ID))
         except Exception:
             # Fails if the owner has never written to the bot: not critical.
             logger.warning("Could not set the owner's command menu (chat id %s)", OWNER_CHAT_ID)
@@ -758,12 +731,12 @@ def build_application() -> Application:
     application = Application.builder().token(TOKEN).post_init(post_init).build()
 
     text = filters.TEXT & ~filters.COMMAND
-    cancel = [CommandHandler("annulla", booking_cancel), MessageHandler(button(BTN_CANCEL), booking_cancel)]
+    cancel = [CommandHandler(names("annulla"), booking_cancel), MessageHandler(button("cancel"), booking_cancel)]
 
     booking_conversation = ConversationHandler(
         entry_points=[
-            CommandHandler("prenota", booking_start),
-            MessageHandler(button(BTN_BOOK), booking_start),
+            CommandHandler(names("prenota"), booking_start),
+            MessageHandler(button("book"), booking_start),
         ],
         states={
             NAME: [*cancel, MessageHandler(text, booking_name)],
@@ -773,8 +746,8 @@ def build_application() -> Application:
             NOTES: [*cancel, MessageHandler(text, booking_notes)],
             CONFIRM: [
                 *cancel,
-                MessageHandler(button(BTN_CONFIRM), booking_confirm),
-                MessageHandler(button(BTN_RESTART), booking_restart),
+                MessageHandler(button("confirm"), booking_confirm),
+                MessageHandler(button("restart"), booking_restart),
             ],
         },
         fallbacks=[
@@ -786,19 +759,21 @@ def build_application() -> Application:
     application.add_handler(booking_conversation)
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("mioid", my_id))
+    application.add_handler(CommandHandler(names("mioid"), my_id))
+    application.add_handler(CommandHandler(names("lingua"), choose_language))
     application.add_handler(CommandHandler("menu", show_menu))
     application.add_handler(CommandHandler("info", show_info))
-    application.add_handler(CommandHandler("prenotazioni", my_bookings))
-    application.add_handler(CommandHandler("oggi", owner_today))
-    application.add_handler(CommandHandler("settimana", owner_week))
-    application.add_handler(MessageHandler(button(BTN_MENU), show_menu))
-    application.add_handler(MessageHandler(button(BTN_INFO), show_info))
-    application.add_handler(MessageHandler(button(BTN_MY_BOOKINGS), my_bookings))
+    application.add_handler(CommandHandler(names("prenotazioni"), my_bookings))
+    application.add_handler(CommandHandler(names("oggi"), owner_today))
+    application.add_handler(CommandHandler(names("settimana"), owner_week))
+    application.add_handler(MessageHandler(button("menu"), show_menu))
+    application.add_handler(MessageHandler(button("info"), show_info))
+    application.add_handler(MessageHandler(button("my_bookings"), my_bookings))
+    application.add_handler(CallbackQueryHandler(set_language, pattern=r"^lang:[a-z]{2}$"))
     application.add_handler(CallbackQueryHandler(cancel_booking_ask, pattern=r"^cancel:\d+$"))
     application.add_handler(CallbackQueryHandler(cancel_booking_confirm, pattern=r"^cancel_yes:\d+$"))
     application.add_handler(CallbackQueryHandler(cancel_booking_abort, pattern=r"^cancel_no$"))
-    application.add_handler(CommandHandler("annulla", nothing_to_cancel))
+    application.add_handler(CommandHandler(names("annulla"), nothing_to_cancel))
     # Unknown commands, free text, stickers, photos...
     application.add_handler(MessageHandler(filters.ALL, unknown_message))
     application.add_error_handler(error_handler)
@@ -813,7 +788,7 @@ def main() -> None:
     if not OWNER_CHAT_ID:
         logger.warning("OWNER_CHAT_ID not set: the owner will not receive booking notifications")
 
-    logger.info("Bot started. Press Ctrl+C to stop.")
+    logger.info("Bot started (default language: %s). Press Ctrl+C to stop.", i18n.default_language())
     try:
         build_application().run_polling(
             # Only new messages and button taps: edited messages are ignored on purpose.

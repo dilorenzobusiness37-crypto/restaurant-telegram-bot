@@ -1,13 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Impostazioni{% endblock %}
+{% block title %}{{ _('dash.settings_title') }}{% endblock %}
 {% block content %}
 <div class="settings-page">
-  <h1>Impostazioni</h1>
-  <p class="lead">Nome, logo e sala valgono anche per il bot: li vede il cliente.</p>
+  <h1>{{ _('dash.settings_title') }}</h1>
+  <p class="lead">{{ _('dash.settings_lead') }}</p>
 
   {% if errors %}
   <div class="notice notice-error" role="alert">
-    <div>Non ho salvato. Correggi questi punti:
+    <div>{{ _('dash.not_saved') }}
       <ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
     </div>
   </div>
@@ -17,102 +17,130 @@
     <input type="hidden" name="csrf" value="{{ csrf }}">
 
     <section class="menu-section" aria-labelledby="place-title">
-      <h2 id="place-title">Il locale</h2>
+      <h2 id="place-title">{{ _('dash.place_title') }}</h2>
       <div class="settings-grid">
         <label class="field span-2">
-          <span class="field-label">Nome del ristorante</span>
+          <span class="field-label">{{ _('dash.restaurant_name') }}</span>
           <input type="text" name="name" value="{{ form.name }}" required maxlength="80">
         </label>
 
         <div class="field span-2 logo-field">
-          <span class="field-label" id="logo-label">Logo <small>PNG, JPG o WebP, al massimo {{ max_logo_label }}</small></span>
+          <span class="field-label" id="logo-label">{{ _('dash.logo') }} <small>{{ _('dash.logo_hint', size=max_logo_label) }}</small></span>
           <div class="logo-row">
             <div class="logo-preview on-dark" aria-hidden="true">
               {% if logo_url %}<img src="{{ logo_url }}" alt="">{% else %}<span class="wordmark">{{ form.name }}</span>{% endif %}
             </div>
             <div class="logo-controls">
-              <input type="file" name="logo" accept="image/png,image/jpeg,image/webp" aria-labelledby="logo-label">
+              {# The browser's own file button speaks the browser's language: this one speaks the panel's #}
+              <div class="file-pick">
+                <input type="file" name="logo" id="logo-file" class="visually-hidden" accept="image/png,image/jpeg,image/webp" aria-labelledby="logo-label logo-choose">
+                <label for="logo-file" class="btn btn-secondary" id="logo-choose">{{ _('dash.choose_file') }}</label>
+                <span class="file-name" id="logo-file-name">{{ _('dash.no_file') }}</span>
+              </div>
               {% if logo_url %}
-                <label class="check"><input type="checkbox" name="remove_logo" value="1"> Togli il logo e usa il nome</label>
+                <label class="check"><input type="checkbox" name="remove_logo" value="1"> {{ _('dash.remove_logo') }}</label>
               {% else %}
-                <p class="hint">Senza logo, in alto compare il nome del ristorante.</p>
+                <p class="hint">{{ _('dash.no_logo_hint') }}</p>
               {% endif %}
             </div>
           </div>
         </div>
 
         <label class="field span-2">
-          <span class="field-label">Indirizzo</span>
+          <span class="field-label">{{ _('dash.address') }}</span>
           <input type="text" name="address" value="{{ form.address }}" required maxlength="150">
         </label>
         <label class="field">
-          <span class="field-label">Telefono</span>
+          <span class="field-label">{{ _('dash.phone') }}</span>
           <input type="tel" name="phone" value="{{ form.phone }}" maxlength="30">
         </label>
         <label class="field">
-          <span class="field-label">Link a Google Maps</span>
+          <span class="field-label">{{ _('dash.maps') }}</span>
           <input type="url" name="maps_url" value="{{ form.maps_url }}" placeholder="https://maps.google.com/...">
         </label>
       </div>
     </section>
 
     <section class="menu-section" aria-labelledby="room-title">
-      <h2 id="room-title">Sala</h2>
-      <p class="hint">Servono a stimare quanto è piena la sala e quanti tavoli restano liberi a ogni orario.</p>
+      <h2 id="room-title">{{ _('dash.room_settings') }}</h2>
+      <p class="hint">{{ _('dash.room_settings_hint') }}</p>
       <div class="settings-grid settings-grid-3">
         <label class="field">
-          <span class="field-label">Posti a sedere</span>
-          <input type="number" name="capacity" value="{{ form.capacity }}" min="1" max="2000" inputmode="numeric" placeholder="es. 40">
+          <span class="field-label">{{ _('dash.seats') }}</span>
+          <input type="number" name="capacity" value="{{ form.capacity }}" min="1" max="2000" inputmode="numeric" placeholder="{{ _('dash.example', n=40) }}">
         </label>
         <label class="field">
-          <span class="field-label">Tavoli</span>
-          <input type="number" name="tables" value="{{ form.tables }}" min="1" max="500" inputmode="numeric" placeholder="es. 12">
+          <span class="field-label">{{ _('dash.tables') }}</span>
+          <input type="number" name="tables" value="{{ form.tables }}" min="1" max="500" inputmode="numeric" placeholder="{{ _('dash.example', n=12) }}">
         </label>
         <label class="field">
-          <span class="field-label">Durata media di un tavolo <small>minuti</small></span>
+          <span class="field-label">{{ _('dash.turn') }} <small>{{ _('dash.minutes') }}</small></span>
           <input type="number" name="table_turn_minutes" value="{{ form.table_turn_minutes }}" min="30" max="360" step="15" inputmode="numeric">
         </label>
       </div>
     </section>
 
+    <section class="menu-section" aria-labelledby="language-title">
+      <h2 id="language-title">{{ _('dash.language_title') }}</h2>
+      <p class="hint">{{ _('dash.panel_language_hint') }}</p>
+      <fieldset class="field plain-fieldset">
+        <legend class="field-label">{{ _('dash.panel_language') }}</legend>
+        <div class="days">
+          {% for code, name in panel_languages %}
+            <label class="day-toggle">
+              <input type="radio" name="panel_language" value="{{ code }}" {{ 'checked' if code == form.panel_language }}>
+              <span>{{ name }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+    </section>
+
     <div class="form-actions">
-      <button type="submit" class="btn">Salva impostazioni</button>
+      <button type="submit" class="btn">{{ _('dash.save_settings') }}</button>
     </div>
   </form>
 
   <form method="post" action="/settings/password" class="settings-form password-form">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <section class="menu-section" aria-labelledby="password-title">
-      <h2 id="password-title">Password del pannello</h2>
-      <p class="hint">
-        {% if custom_password %}Cambiandola, chi è collegato da altri dispositivi dovrà rientrare.
-        {% else %}Ora usi la password scritta nel file .env. Se la cambi qui, quella del file non vale più.{% endif %}
-      </p>
+      <h2 id="password-title">{{ _('dash.password_title') }}</h2>
+      <p class="hint">{{ _('dash.password_custom_hint') if custom_password else _('dash.password_env_hint') }}</p>
       {% if password_errors %}
       <div class="notice notice-error" role="alert">
-        <div>Password non cambiata:
+        <div>{{ _('dash.password_not_changed') }}
           <ul>{% for e in password_errors %}<li>{{ e }}</li>{% endfor %}</ul>
         </div>
       </div>
       {% endif %}
       <div class="settings-grid settings-grid-3">
         <label class="field">
-          <span class="field-label">Password attuale</span>
+          <span class="field-label">{{ _('dash.current_password') }}</span>
           <input type="password" name="current" autocomplete="current-password" required>
         </label>
         <label class="field">
-          <span class="field-label">Nuova password <small>almeno 8 caratteri</small></span>
-          <input type="password" name="new" autocomplete="new-password" minlength="8" required>
+          <span class="field-label">{{ _('dash.new_password') }} <small>{{ _('dash.new_password_hint', n=min_password) }}</small></span>
+          <input type="password" name="new" autocomplete="new-password" minlength="{{ min_password }}" required>
         </label>
         <label class="field">
-          <span class="field-label">Ripeti la nuova password</span>
-          <input type="password" name="confirm" autocomplete="new-password" minlength="8" required>
+          <span class="field-label">{{ _('dash.repeat_password') }}</span>
+          <input type="password" name="confirm" autocomplete="new-password" minlength="{{ min_password }}" required>
         </label>
       </div>
       <div class="form-actions">
-        <button type="submit" class="btn btn-secondary">Cambia password</button>
+        <button type="submit" class="btn btn-secondary">{{ _('dash.change_password') }}</button>
       </div>
     </section>
   </form>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Show the chosen file's name next to the button.
+  (function () {
+    var input = document.getElementById("logo-file"), label = document.getElementById("logo-file-name");
+    if (input) input.addEventListener("change", function () { if (input.files[0]) label.textContent = input.files[0].name; });
+  })();
+</script>
 {% endblock %}

@@ -583,6 +583,10 @@ input[type=file]::file-selector-button {
 }
 .logo-preview img { max-height: 44px; max-width: 200px; object-fit: contain; }
 .logo-controls { display: grid; gap: 4px; min-width: 0; }
+.file-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.file-name { font-size: var(--fs-meta); color: var(--muted); overflow-wrap: anywhere; }
+/* The real input is visually hidden: show its keyboard focus on the button */
+.file-pick input:focus-visible + label { outline: 3px solid var(--focus); outline-offset: 2px; }
 
 /* Sticky save bar, sitting on top of the tab bar */
 .save-bar {

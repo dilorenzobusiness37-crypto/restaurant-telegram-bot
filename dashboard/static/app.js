@@ -4,6 +4,17 @@
 (function () {
   "use strict";
 
+  // Texts in the dashboard's language, embedded by base.html (see locales/*.json, "dash.js").
+  var I18N = (function () {
+    var el = document.getElementById("i18n");
+    try { return el ? JSON.parse(el.textContent) : {}; } catch (e) { return {}; }
+  })();
+  function tr(key, params) {
+    var text = I18N[key] || key;
+    Object.keys(params || {}).forEach(function (k) { text = text.split("{" + k + "}").join(params[k]); });
+    return text;
+  }
+
   var UNDO_MS = 2000;            // how long "Annulla" is offered before the cancellation is sent
   var HIGHLIGHT_MS = 2500;
   var POLL_MS = 5000;            // how often the home page asks whether something changed
@@ -93,9 +104,9 @@
 
     row.classList.add("is-pending");
     actions.innerHTML =
-      '<span class="pending-label">Cancellata</span>' +
-      '<button type="button" class="undo">Annulla<span class="visually-hidden"> la cancellazione di ' +
-      name.replace(/[<>&"]/g, "") + "</span></button>";
+      '<span class="pending-label">' + tr("pending") + "</span>" +
+      '<button type="button" class="undo">' + tr("undo") + '<span class="visually-hidden">' +
+      tr("undo_sr", { name: name.replace(/[<>&"]/g, "") }) + "</span></button>";
     var undo = actions.querySelector(".undo");
     undo.focus();
     pending.set(url, true);
@@ -108,7 +119,7 @@
       actions.innerHTML = original;
       var again = actions.querySelector("a");
       if (again) again.focus();
-      showToast("La prenotazione di " + name + " resta valida.", "ok");
+      showToast(tr("kept", { name: name }), "ok");
     });
 
     function commit() {
@@ -128,7 +139,7 @@
         .catch(function () {
           row.classList.remove("is-pending", "is-leaving");
           actions.innerHTML = original;
-          showToast("Non sono riuscito a cancellare: controlla la connessione e riprova.", "error");
+          showToast(tr("cancel_failed"), "error");
         });
     }
   });
@@ -172,11 +183,11 @@
       var iso = today.getFullYear() + "-" + String(today.getMonth() + 1).padStart(2, "0") + "-" + String(today.getDate()).padStart(2, "0");
       if (b.date === iso) return b.time;
       var d = new Date(b.date + "T12:00:00");
-      var day = d.toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" });
-      return day + " alle " + b.time;
+      var day = d.toLocaleDateString(I18N.lang || document.documentElement.lang, { weekday: "short", day: "numeric", month: "short" });
+      return day + " " + tr("at") + " " + b.time;
     }
 
-    function people(n) { return n + (n === 1 ? " persona" : " persone"); }
+    function people(n) { return n + " " + (n === 1 ? tr("person") : tr("persons")); }
 
     function announce(state) {
       var added = state.bookings.filter(function (b) { return b.status === "confirmed" && !(String(b.id) in known); });
@@ -185,12 +196,12 @@
       });
       if (added.length === 1) {
         var b = added[0];
-        showToast("Nuova prenotazione: " + b.name + ", " + when(b) + ", " + people(b.people), "ok");
+        showToast(tr("new_booking", { what: b.name + ", " + when(b) + ", " + people(b.people) }), "ok");
       } else if (added.length > 1) {
-        showToast(added.length + " nuove prenotazioni: " + added.map(function (b) { return b.name; }).join(", "), "ok");
+        showToast(tr("new_bookings", { n: added.length, names: added.map(function (b) { return b.name; }).join(", ") }), "ok");
       } else if (cancelled.length) {
         var c = cancelled[0];
-        showToast("Cancellata dal cliente: " + c.name + ", " + when(c) + ", " + people(c.people), "warn");
+        showToast(tr("customer_cancelled", { what: c.name + ", " + when(c) + ", " + people(c.people) }), "warn");
       }
       return added;
     }
@@ -248,12 +259,12 @@
       fetch(stateUrl, { credentials: "same-origin", headers: { "X-Requested-With": "fetch" }, cache: "no-store" })
         .then(function (r) {
           if (r.status === 404) {
-            stop("error", "Aggiornamento automatico non disponibile: riavvia il pannello (python -m dashboard) e ricarica la pagina.",
+            stop("error", tr("live_404"),
                  stateUrl + " answered 404: the server process is older than this page. Restart it.");
             return null;
           }
           if (r.status === 401) {
-            stop("warn", "Sessione scaduta: ricarica la pagina per rientrare.", "session expired (401), polling stopped");
+            stop("warn", tr("live_401"), "session expired (401), polling stopped");
             return null;
           }
           if (!r.ok) throw new Error("HTTP " + r.status);
@@ -264,7 +275,7 @@
           if (failures) console.info("[live] connection back after " + failures + " failed attempt(s)");
           failures = 0;
           if (state.version === version) {
-            setStatus("ok", "Aggiornamento automatico attivo, ultimo controllo alle " + hhmm());
+            setStatus("ok", tr("live_checked", { time: hhmm() }));
             return null;
           }
           console.info("[live] bookings changed (" + version + " -> " + state.version + "), redrawing");
@@ -273,13 +284,13 @@
             if (!fresh) throw new Error("the page came back without a bookings board");
             adopt(fresh);
             highlight(fresh, added);
-            setStatus("ok", "Aggiornamento automatico attivo, ultimo controllo alle " + hhmm());
+            setStatus("ok", tr("live_checked", { time: hhmm() }));
           });
         })
         .catch(function (err) {
           failures += 1;
           console.warn("[live] update failed (" + failures + "): " + err.message);
-          if (failures >= 3) setStatus("warn", "Connessione al pannello persa, riprovo ogni 5 secondi…");
+          if (failures >= 3) setStatus("warn", tr("live_lost"));
         })
         .then(function () { busy = false; schedule(); });
     }
@@ -299,7 +310,7 @@
 
     if (!stopped) {
       console.info("[live] watching " + stateUrl + " every " + POLL_MS / 1000 + " s (version " + version + ")");
-      setStatus("ok", "Aggiornamento automatico attivo");
+      setStatus("ok", tr("live_ok"));
       schedule();
     }
     return { adopt: adopt, poll: poll };

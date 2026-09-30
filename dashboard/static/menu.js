@@ -3,6 +3,17 @@
 (function () {
   "use strict";
 
+  // Texts in the dashboard's language, embedded by base.html (see locales/*.json, "dash.js").
+  var I18N = (function () {
+    var el = document.getElementById("i18n");
+    try { return el ? JSON.parse(el.textContent) : {}; } catch (e) { return {}; }
+  })();
+  function tr(key, params) {
+    var text = I18N[key] || key;
+    Object.keys(params || {}).forEach(function (k) { text = text.split("{" + k + "}").join(params[k]); });
+    return text;
+  }
+
   var form = document.getElementById("menu-form");
   if (!form) return;
   var script = document.currentScript;
@@ -14,7 +25,7 @@
 
   function markDirty() {
     dirty = true;
-    state.textContent = "Modifiche non salvate";
+    state.textContent = tr("unsaved");
     state.classList.add("is-dirty");
     discard.hidden = false;
   }
@@ -78,7 +89,9 @@
   function formatPrice(raw) {
     var cleaned = raw.replace(/[€\s]/g, "").replace(",", ".");
     if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) return null;
-    return "€ " + Number(cleaned).toFixed(2).replace(".", ",");
+    // Same format as the bot in the restaurant's default language; no line break inside a price.
+    var amount = Number(cleaned).toFixed(2).replace(".", I18N.preview_decimal || ",");
+    return (I18N.preview_price || "€ {amount}").replace("{amount}", amount).replace(/ /g, "\u00a0");
   }
 
   function value(root, role) {
@@ -89,7 +102,7 @@
   function renderPreview() {
     if (!preview) return;
     // Same layout as the bot's /menu answer (see show_menu in bot.py).
-    var html = "<p><b>📖 Menù – " + esc(preview.dataset.restaurant || "") + "</b></p>";
+    var html = "<p>" + tr("preview_title").replace("{restaurant}", esc(preview.dataset.restaurant || "")) + "</p>";
     form.querySelectorAll("[data-sheet]").forEach(function (sheet) {
       var delCat = sheet.querySelector('[data-role="delete-category"]');
       if (delCat && delCat.checked) return;
@@ -102,16 +115,16 @@
         var desc = value(row, "desc");
         items.push(
           '<p class="pv-item">• ' + esc(name) + " — <b>" +
-          (price || '<span class="pv-missing">prezzo mancante</span>') + "</b>" +
+          (price || '<span class="pv-missing">' + tr("price_missing") + "</span>") + "</b>" +
           (desc ? '<i class="pv-desc">' + esc(desc) + "</i>" : "") + "</p>"
         );
       });
       var category = value(sheet, "category");
       if (!category && !items.length) return;
       html += '<p class="pv-cat">' + esc(value(sheet, "emoji")) + " <b>" +
-        esc((category || "Senza nome").toUpperCase()) + "</b></p>" + items.join("");
+        esc((category || tr("no_name")).toUpperCase()) + "</b></p>" + items.join("");
     });
-    html += '<p class="pv-foot"><i>Per allergeni e intolleranze chiedi al nostro personale.</i></p>';
+    html += '<p class="pv-foot">' + tr("preview_footer") + "</p>";
     preview.innerHTML = html;
   }
 

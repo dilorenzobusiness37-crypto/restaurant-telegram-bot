@@ -1,13 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Menù e orari{% endblock %}
+{% block title %}{{ _('dash.menu_title') }}{% endblock %}
 {% block main_class %}page menu-page{% endblock %}
 {% block content %}
-<h1>Menù e orari</h1>
-<p class="lead">Tocca un prezzo e scrivi. Quando salvi, il bot usa subito il menù nuovo.</p>
+<h1>{{ _('dash.menu_title') }}</h1>
+<p class="lead">{{ _('dash.menu_lead') }}</p>
 
 {% if errors %}
 <div class="notice notice-error" role="alert">
-  <div>Non ho salvato. Correggi questi punti:
+  <div>{{ _('dash.not_saved') }}
     <ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
   </div>
 </div>
@@ -19,48 +19,48 @@
 
   {# ---------------- Menu sheets ---------------- #}
   <section class="menu-section menu-sheets" aria-labelledby="menu-title">
-    <h2 id="menu-title">Piatti e prezzi</h2>
-    <p class="hint">Per aggiungere un piatto scrivi nella riga vuota in fondo alla categoria.</p>
+    <h2 id="menu-title">{{ _('dash.dishes_title') }}</h2>
+    <p class="hint">{{ _('dash.dishes_hint') }}</p>
 
     {% for cat in form.categories %}
       {% set i = loop.index0 %}
-      {% set label = cat.category or 'nuova categoria' %}
+      {% set label = cat.category or _('dash.new_category') %}
       {% if cat.new %}
         {% set has_content = cat.category or cat.emoji or (cat['items'] | selectattr('name') | list) %}
         <details class="new-category"{% if has_content %} open{% endif %}>
-          <summary>Aggiungi una categoria</summary>
+          <summary>{{ _('dash.add_category') }}</summary>
       {% endif %}
 
       <div class="sheet" data-sheet>
         <div class="sheet-head">
-          <input type="text" class="emoji" name="cat{{ i }}_emoji" value="{{ cat.emoji }}" maxlength="8" aria-label="Emoji di {{ label }}" data-role="emoji">
-          <input type="text" name="cat{{ i }}_name" value="{{ cat.category }}" maxlength="50" aria-label="Nome categoria" data-role="category"
-                 {% if cat.new %}placeholder="Nome, per esempio Pizze"{% endif %}>
+          <input type="text" class="emoji" name="cat{{ i }}_emoji" value="{{ cat.emoji }}" maxlength="8" aria-label="{{ _('dash.emoji_of', name=label) }}" data-role="emoji">
+          <input type="text" name="cat{{ i }}_name" value="{{ cat.category }}" maxlength="50" aria-label="{{ _('dash.category_name') }}" data-role="category"
+                 {% if cat.new %}placeholder="{{ _('dash.category_placeholder') }}"{% endif %}>
           {% if not cat.new %}
-            <label class="del-toggle"><input type="checkbox" name="cat{{ i }}_delete" value="1" data-role="delete-category"> Elimina</label>
+            <label class="del-toggle"><input type="checkbox" name="cat{{ i }}_delete" value="1" data-role="delete-category"> {{ _('dash.delete') }}</label>
           {% else %}<span></span>{% endif %}
         </div>
 
-        <div class="sheet-cols" aria-hidden="true"><span>Piatto</span><span>Descrizione</span><span>Prezzo</span><span></span></div>
+        <div class="sheet-cols" aria-hidden="true"><span>{{ _('dash.dish') }}</span><span>{{ _('dash.description') }}</span><span>{{ _('dash.price') }}</span><span></span></div>
         <input type="hidden" name="cat{{ i }}_item_count" value="{{ cat['items'] | length }}">
         {% for item in cat['items'] %}
           {% set p = 'cat' ~ i ~ '_item' ~ loop.index0 ~ '_' %}
-          {% set dish = item.name or 'nuovo piatto' %}
+          {% set dish = item.name or _('dash.new_dish') %}
           <div class="row{{ ' is-blank' if not item }}" data-row>
             <div class="cell-name">
-              <input type="text" name="{{ p }}name" value="{{ item.name }}" maxlength="80" aria-label="Piatto" data-role="name"
-                     {% if not item %}placeholder="Aggiungi un piatto"{% endif %}>
+              <input type="text" name="{{ p }}name" value="{{ item.name }}" maxlength="80" aria-label="{{ _('dash.dish') }}" data-role="name"
+                     {% if not item %}placeholder="{{ _('dash.add_dish') }}"{% endif %}>
             </div>
             <div class="cell-desc">
-              <input type="text" name="{{ p }}desc" value="{{ item.description }}" maxlength="150" aria-label="Descrizione di {{ dish }}"
-                     placeholder="Descrizione" data-role="desc">
+              <input type="text" name="{{ p }}desc" value="{{ item.description }}" maxlength="150" aria-label="{{ _('dash.description_of', name=dish) }}"
+                     placeholder="{{ _('dash.description') }}" data-role="desc">
             </div>
             <div class="cell-price">
-              <input type="text" name="{{ p }}price" value="{{ item.price | price_input }}" inputmode="decimal" aria-label="Prezzo di {{ dish }} in euro"
-                     data-role="price" {% if not item %}placeholder="0,00"{% endif %}>
+              <input type="text" name="{{ p }}price" value="{{ item.price | price_input }}" inputmode="decimal" aria-label="{{ _('dash.price_of', name=dish) }}"
+                     data-role="price" {% if not item %}placeholder="{{ 0.0 | price_input }}"{% endif %}>
             </div>
             <div class="cell-del">
-              {% if item %}<label class="del-toggle"><input type="checkbox" name="{{ p }}delete" value="1" data-role="delete"> Elimina<span class="visually-hidden"> {{ dish }}</span></label>{% endif %}
+              {% if item %}<label class="del-toggle"><input type="checkbox" name="{{ p }}delete" value="1" data-role="delete"> {{ _('dash.delete') }}<span class="visually-hidden"> {{ dish }}</span></label>{% endif %}
             </div>
           </div>
         {% endfor %}
@@ -73,41 +73,41 @@
   {# ---------------- What the customer sees ---------------- #}
   <aside class="preview" aria-labelledby="preview-title">
     <div class="preview-head">
-      <h2 id="preview-title">Come lo vede il cliente</h2>
-      <p class="hint">Il messaggio del bot, aggiornato mentre scrivi.</p>
+      <h2 id="preview-title">{{ _('dash.preview_title') }}</h2>
+      <p class="hint">{{ _('dash.preview_hint', language=customer_language_name()) }}</p>
     </div>
     <div class="chat">
       <div class="bubble" id="preview" data-restaurant="{{ restaurant_name }}">
-        <noscript>L'anteprima ha bisogno di JavaScript.</noscript>
+        <noscript>{{ _('dash.preview_noscript') }}</noscript>
       </div>
     </div>
   </aside>
 
   {# ---------------- Opening hours and bookings ---------------- #}
   <section class="menu-section menu-hours" aria-labelledby="hours-title">
-    <h2 id="hours-title">Orari e prenotazioni</h2>
+    <h2 id="hours-title">{{ _('dash.hours_title') }}</h2>
     <div class="settings-grid">
       <label class="field span-2">
-        <span class="field-label">Orari di apertura <small>una riga per riga, come li leggerà il cliente</small></span>
+        <span class="field-label">{{ _('dash.opening_hours') }} <small>{{ _('dash.opening_hours_hint') }}</small></span>
         <textarea name="opening_hours" rows="4" required>{{ form.opening_hours }}</textarea>
       </label>
       <fieldset class="field span-2 plain-fieldset">
-        <legend class="field-label">Giorni di chiusura <small>in questi giorni non si può prenotare</small></legend>
+        <legend class="field-label">{{ _('dash.closed_days') }} <small>{{ _('dash.closed_days_hint') }}</small></legend>
         <div class="days">
           {% for n, day in form.weekdays %}
             <label class="day-toggle">
               <input type="checkbox" name="closed_weekdays" value="{{ n }}" {{ 'checked' if n in form.closed_weekdays }}>
-              <span>{{ day | capitalize }}</span>
+              <span>{{ day | ucfirst }}</span>
             </label>
           {% endfor %}
         </div>
       </fieldset>
       <label class="field">
-        <span class="field-label">Orari prenotabili <small>separati da virgola</small></span>
+        <span class="field-label">{{ _('dash.booking_times') }} <small>{{ _('dash.booking_times_hint') }}</small></span>
         <input type="text" name="booking_times" value="{{ form.booking_times }}" placeholder="19:30, 20:00, 20:30, 21:00" required>
       </label>
       <label class="field">
-        <span class="field-label">Persone massime per prenotazione online</span>
+        <span class="field-label">{{ _('dash.max_people') }}</span>
         <input type="number" name="max_people" value="{{ form.max_people }}" min="1" max="500" required inputmode="numeric">
       </label>
     </div>
@@ -115,10 +115,10 @@
 
   <div class="save-bar">
     <div class="page save-bar-inner">
-      <span class="save-state{{ ' is-dirty' if errors }}" id="save-state" role="status">{{ 'Modifiche non salvate' if errors else 'Tutto salvato' }}</span>
+      <span class="save-state{{ ' is-dirty' if errors }}" id="save-state" role="status">{{ _('dash.unsaved') if errors else _('dash.all_saved') }}</span>
       <div class="save-actions">
-        <a href="/menu" class="btn btn-secondary" id="discard" {% if not errors %}hidden{% endif %}>Annulla</a>
-        <button type="submit" class="btn">Salva menù</button>
+        <a href="/menu" class="btn btn-secondary" id="discard" {% if not errors %}hidden{% endif %}>{{ _('dash.cancel_button') }}</a>
+        <button type="submit" class="btn">{{ _('dash.save_menu') }}</button>
       </div>
     </div>
   </div>

@@ -9,7 +9,7 @@
 
 {% macro flags(notes) %}
 {% set tags = notes | note_tags %}
-{% if tags %}<span class="flags">{% for t in tags %}<span class="flag flag-{{ t | lower }}">{{ t }}</span>{% endfor %}</span>{% endif %}
+{% if tags %}<span class="flags">{% for tag in tags %}<span class="flag flag-{{ tag }}">{{ _('dash.tag_' ~ tag) }}</span>{% endfor %}</span>{% endif %}
 {% endmacro %}
 
 {% macro arrival(b, today_iso, back, highlight_id=None, show_time=False) %}
@@ -17,12 +17,13 @@
 <div class="arrival{{ ' is-cancelled' if cancelled }}{{ ' just-saved' if b.id == highlight_id }}" data-booking="{{ b.id }}" data-status="{{ b.status }}">
   {{ avatar_badge(b.name) }}
   <p class="arrival-name">{% if show_time %}<span class="arrival-time num">{{ b.time }}</span> {% endif %}{{ b.name }}</p>
-  <p class="arrival-people"><strong class="num">{{ b.people }}</strong> {{ 'persona' if b.people == 1 else 'persone' }}</p>
+  {% set people_parts = _n('common.people', b.people).split(' ', 1) %}
+  <p class="arrival-people"><strong class="num">{{ people_parts[0] }}</strong> {{ people_parts[1] }}</p>
   <p class="arrival-source">
     {%- if cancelled -%}
-      <span class="status-cancelled">{{ 'Cancellata da te' if b.cancelled_by == 'owner' else 'Cancellata dal cliente' }}</span>
+      <span class="status-cancelled">{{ _('dash.cancelled_by_you') if b.cancelled_by == 'owner' else _('dash.cancelled_by_customer') }}</span>
     {%- elif b.source == 'manual' -%}
-      {% if b.phone %}Al telefono, <a href="tel:{{ b.phone | replace(' ', '') }}">{{ b.phone }}</a>{% else %}Al telefono{% endif %}
+      {% if b.phone %}{{ _('dash.by_phone') }}, <a href="tel:{{ b.phone | replace(' ', '') }}">{{ b.phone }}</a>{% else %}{{ _('dash.by_phone') }}{% endif %}
     {%- else -%}
       Telegram{% if b.username %} @{{ b.username }}{% endif %}
     {%- endif -%}
@@ -33,7 +34,7 @@
   {% if not cancelled and b.date >= today_iso %}
     <div class="arrival-actions">
       <a class="link-danger" href="/bookings/{{ b.id }}/cancel?next={{ back | urlencode }}"
-         data-cancel-url="/bookings/{{ b.id }}/cancel" data-name="{{ b.name }}">Cancella<span class="visually-hidden"> la prenotazione di {{ b.name }} alle {{ b.time }}</span></a>
+         data-cancel-url="/bookings/{{ b.id }}/cancel" data-name="{{ b.name }}">{{ _('dash.cancel') }}<span class="visually-hidden">{{ _('dash.cancel_sr', name=b.name, time=b.time) }}</span></a>
     </div>
   {% endif %}
 </div>
@@ -49,7 +50,7 @@
   {% for group in active | groupby('time') %}
     {% set past = live and group.grouper < now %}
     {% if not ns.now_drawn and not past %}
-      {% if not loop.first %}<li class="now-line"><span>Adesso {{ now }}</span></li>{% endif %}
+      {% if not loop.first %}<li class="now-line"><span>{{ _('dash.now_line', time=now) }}</span></li>{% endif %}
       {% set ns.now_drawn = True %}
     {% endif %}
     <li class="slot{{ ' is-past' if past }}">
@@ -58,13 +59,13 @@
         {% for b in group.list %}{{ arrival(b, today_iso, back, highlight_id) }}{% endfor %}
       </div>
     </li>
-    {% if loop.last and not ns.now_drawn %}<li class="now-line"><span>Adesso {{ now }}</span></li>{% endif %}
+    {% if loop.last and not ns.now_drawn %}<li class="now-line"><span>{{ _('dash.now_line', time=now) }}</span></li>{% endif %}
   {% endfor %}
 </ol>
 {% endif %}
 {% if cancelled %}
 <details class="cancelled-list" data-key="cancelled-{{ (cancelled | first).date }}">
-  <summary>{{ cancelled | length }} {{ 'prenotazione cancellata' if cancelled | length == 1 else 'prenotazioni cancellate' }}</summary>
+  <summary>{{ _n('dash.cancelled_n', cancelled | length) }}</summary>
   {% for b in cancelled %}{{ arrival(b, today_iso, back, show_time=True) }}{% endfor %}
 </details>
 {% endif %}
