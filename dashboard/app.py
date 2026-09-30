@@ -116,6 +116,13 @@ def service_status() -> dict | None:
     return {"label": "Servizio concluso", "kind": "after"}
 
 
+def asset_version() -> str:
+    """Changes whenever a file in static/ changes: appended to CSS/JS URLs so browsers
+    never keep an outdated script (e.g. one without live updates) in their cache."""
+    latest = max(p.stat().st_mtime_ns for p in (HERE / "static").rglob("*") if p.is_file())
+    return format(latest, "x")[-10:]
+
+
 def logo_url() -> str | None:
     path = store.logo_path()
     return f"/logo?v={int(path.stat().st_mtime)}" if path else None
@@ -127,6 +134,7 @@ templates.env.globals.update(
     now_hm=lambda: now().strftime("%H:%M"),
     day_iso=lambda offset=0: (now().date() + timedelta(days=offset)).isoformat(),
     booking_slots=lambda: load_config()["restaurant"]["booking_times"],
+    asset_version=asset_version,
 )
 templates.env.filters.update(
     todate=date.fromisoformat,

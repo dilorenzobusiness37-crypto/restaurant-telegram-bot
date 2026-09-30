@@ -230,6 +230,12 @@ a { color: inherit; }
 .fill span { display: block; height: 100%; background: var(--zafferano); border-radius: 4px; }
 .service-summary { margin-top: 12px; font-size: var(--fs-body); }
 .service-summary strong { font-weight: 700; }
+.live-status { margin-top: 14px; font-size: var(--fs-caption); opacity: .85; display: flex; align-items: center; gap: 6px; }
+.live-status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--basilico-soft); }
+.live-status.is-warn { opacity: 1; font-weight: 600; }
+.live-status.is-warn::before { background: var(--zafferano); }
+.live-status.is-error { opacity: 1; font-weight: 700; background: var(--zafferano); color: var(--espresso); padding: 6px 10px; border-radius: 6px; }
+.live-status.is-error::before { background: var(--pomodoro); }
 .service-back { display: inline-block; margin-top: 12px; font-size: var(--fs-meta); font-weight: 600; }
 
 .summary { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 0; padding: 0; }

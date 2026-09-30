@@ -126,5 +126,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/menu.js" defer data-dirty="{{ 'true' if errors else 'false' }}"></script>
+<script src="/static/menu.js?v={{ asset_version() if asset_version is defined else '' }}" defer data-dirty="{{ 'true' if errors else 'false' }}"></script>
 {% endblock %}

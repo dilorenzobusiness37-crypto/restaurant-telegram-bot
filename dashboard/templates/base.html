@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#561a2c">
   <title>{% block title %}Pannello{% endblock %} – {{ restaurant_name }}</title>
   <link rel="preload" href="/static/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_version() if asset_version is defined else '' }}">
   {% if authenticated %}<meta name="csrf-token" content="{{ csrf }}">{% endif %}
 </head>
 <body class="{% block body_class %}{% endblock %}">
@@ -46,7 +46,7 @@
 
   {# Feedback for actions done without reloading the page #}
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-  {% if authenticated %}<script src="/static/app.js" defer></script>{% endif %}
+  {% if authenticated %}<script src="/static/app.js?v={{ asset_version() if asset_version is defined else '' }}" defer></script>{% endif %}
   {% block scripts %}{% endblock %}
 </body>
 </html>

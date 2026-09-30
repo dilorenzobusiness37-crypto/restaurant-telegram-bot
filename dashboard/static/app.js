@@ -164,6 +164,7 @@
     function adopt(fresh) {
       version = fresh.dataset.version;
       readKnown(fresh);
+      renderStatus();
     }
 
     function when(b) {
@@ -206,6 +207,38 @@
       clearHighlights(fresh);
     }
 
+    // --- Visible status and console diagnostics -----------------------------
+    var status = { kind: "ok", text: "" };
+    var failures = 0;
+
+    function hhmm() {
+      var d = new Date();
+      return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+    }
+
+    function setStatus(kind, text) {
+      status = { kind: kind, text: text };
+      renderStatus();
+    }
+
+    // The board is replaced on every redraw, so the status is re-applied each time.
+    function renderStatus() {
+      var el = document.querySelector("[data-live-status]");
+      if (!el || !status.text) return;
+      el.textContent = status.text;
+      el.className = "live-status" + (status.kind === "ok" ? "" : " is-" + status.kind);
+      el.setAttribute("role", status.kind === "ok" ? "note" : "alert");
+      el.hidden = false;
+    }
+
+    function stop(kind, text, log) {
+      stopped = true;
+      clearTimeout(timer);
+      timer = null;
+      console.error("[live] " + log);
+      setStatus(kind, text);
+    }
+
     function poll() {
       timer = null;
       if (stopped) return;
@@ -214,23 +247,40 @@
       busy = true;
       fetch(stateUrl, { credentials: "same-origin", headers: { "X-Requested-With": "fetch" }, cache: "no-store" })
         .then(function (r) {
-          if (r.status === 401) {
-            stopped = true;
-            showToast("Sessione scaduta: ricarica la pagina per rientrare.", "warn");
+          if (r.status === 404) {
+            stop("error", "Aggiornamento automatico non disponibile: riavvia il pannello (python -m dashboard) e ricarica la pagina.",
+                 stateUrl + " answered 404: the server process is older than this page. Restart it.");
             return null;
           }
-          return r.ok ? r.json() : null;
+          if (r.status === 401) {
+            stop("warn", "Sessione scaduta: ricarica la pagina per rientrare.", "session expired (401), polling stopped");
+            return null;
+          }
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
         })
         .then(function (state) {
-          if (!state || state.version === version) return null;
+          if (!state) return null;
+          if (failures) console.info("[live] connection back after " + failures + " failed attempt(s)");
+          failures = 0;
+          if (state.version === version) {
+            setStatus("ok", "Aggiornamento automatico attivo, ultimo controllo alle " + hhmm());
+            return null;
+          }
+          console.info("[live] bookings changed (" + version + " -> " + state.version + "), redrawing");
           var added = announce(state);
           return refreshBoard().then(function (fresh) {
-            if (!fresh) return;
+            if (!fresh) throw new Error("the page came back without a bookings board");
             adopt(fresh);
             highlight(fresh, added);
+            setStatus("ok", "Aggiornamento automatico attivo, ultimo controllo alle " + hhmm());
           });
         })
-        .catch(function () { /* offline for a moment: try again at the next tick */ })
+        .catch(function (err) {
+          failures += 1;
+          console.warn("[live] update failed (" + failures + "): " + err.message);
+          if (failures >= 3) setStatus("warn", "Connessione al pannello persa, riprovo ogni 5 secondi…");
+        })
         .then(function () { busy = false; schedule(); });
     }
 
@@ -247,7 +297,11 @@
       }
     });
 
-    schedule();
+    if (!stopped) {
+      console.info("[live] watching " + stateUrl + " every " + POLL_MS / 1000 + " s (version " + version + ")");
+      setStatus("ok", "Aggiornamento automatico attivo");
+      schedule();
+    }
     return { adopt: adopt, poll: poll };
   })();
   window.dashboardLive = live;
