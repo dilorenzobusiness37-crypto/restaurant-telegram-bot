@@ -166,6 +166,9 @@ a { color: inherit; }
   100% { background-color: transparent; box-shadow: inset 4px 0 0 transparent; }
 }
 .just-saved { animation: just-saved 1.8s ease-out; }
+/* Rows bleed the highlight past their edges, so the green bar never touches the text */
+.arrival.just-saved, .next-item.just-saved { margin: 0 -10px; padding-left: 10px; padding-right: 10px; border-radius: 6px; }
+.just-saved .avatar { box-shadow: 0 0 0 2px var(--paper); }
 
 /* ------------------------------------------------------------------ */
 /* Buttons and links                                                  */

@@ -8,7 +8,8 @@
 {% set back = '/?day=' ~ day.isoformat() if selected else '/' %}
 {% set closed_day = day.weekday() in closed_weekdays %}
 
-<div class="board" id="board">
+<div class="board" id="board" data-version="{{ board_version }}"
+     data-state-url="/api/bookings/state{{ '?day=' ~ selected.isoformat() if selected }}">
   <div class="board-main">
 
     {# ---- The number that matters ---- #}
@@ -57,7 +58,7 @@
         <ol class="next">
           {% for b in next_arrivals %}
             {% set wait = b.time | minutes_until %}
-            <li class="next-item{{ ' is-imminent' if wait <= 15 }}">
+            <li class="next-item{{ ' is-imminent' if wait <= 15 }}" data-booking="{{ b.id }}" data-status="confirmed">
               <span class="next-time num">{{ b.time }}</span>
               {{ avatar_badge(b.name, 'lg') }}
               <div class="next-main">
@@ -138,7 +139,7 @@
       {% for d in days %}
         {% set parts = format_date(d.date).split(' ') %}
         {% set closed = d.date.weekday() in closed_weekdays %}
-        <details class="day">
+        <details class="day" data-key="day-{{ d.date.isoformat() }}">
           <summary>
             <span class="day-name">{{ parts[0] | capitalize }}<small>{{ parts[1] }} {{ parts[2] }}</small></span>
             {% if closed and not d.bookings %}

@@ -1,6 +1,8 @@
 """Owner dashboard: bookings overview, manual bookings, menu editor and settings."""
 
 import asyncio
+import hashlib
+import json
 import logging
 import mimetypes
 import os
@@ -326,19 +328,62 @@ def notes_summary(confirmed: list[dict]) -> list[str]:
     return labels
 
 
+# What a booking contributes to the page: if any of these change, the page must be redrawn.
+STATE_FIELDS = ("id", "date", "time", "name", "people", "notes", "status", "cancelled_by", "phone", "source")
+
+
+def board_state(selected: date | None) -> dict:
+    """Bookings shown on the home page (today and the next days, or one chosen day)
+    plus a short version string that changes whenever the page would look different.
+    """
+    today = now().date()
+    start, end = (selected, selected) if selected else (today, today + timedelta(days=UPCOMING_DAYS))
+    bookings = rows(start, end)
+    live = (selected or today) == today
+    fingerprint = json.dumps(
+        [
+            [[b[k] for k in STATE_FIELDS] for b in bookings],
+            load_config()["restaurant"],  # capacity, time slots, closed days, name
+            # Today the page shows the time ("Adesso", countdowns): redraw once a minute.
+            now().strftime("%Y-%m-%d %H:%M") if live else today.isoformat(),
+        ],
+        sort_keys=True, default=str,
+    )
+    return {
+        "version": hashlib.sha1(fingerprint.encode()).hexdigest()[:16],
+        "bookings": [
+            {k: b[k] for k in ("id", "date", "time", "name", "people", "status", "cancelled_by")}
+            for b in bookings
+        ],
+    }
+
+
+def parse_day(day: str | None) -> date | None:
+    """ISO date from the query string; raises ValueError if it is not one."""
+    return date.fromisoformat(day) if day else None
+
+
+@router.get("/api/bookings/state")
+async def bookings_state(day: str | None = None):
+    """Polled every few seconds by the home page to notice bookings made or cancelled in the bot."""
+    try:
+        state = board_state(parse_day(day))
+    except ValueError:
+        return JSONResponse({"ok": False, "message": "Data non valida."}, status_code=400)
+    return JSONResponse(state, headers={"Cache-Control": "no-store"})
+
+
 @router.get("/")
 async def bookings_page(request: Request, day: str | None = None):
     today = now().date()
     restaurant = load_config()["restaurant"]
     context = {"today": today, "today_iso": today.isoformat(), "closed_weekdays": restaurant.get("closed_weekdays", [])}
 
-    selected = None
-    if day:
-        try:
-            selected = date.fromisoformat(day)
-        except ValueError:
-            flash(request, "Data non valida.", "error")
-            return redirect("/")
+    try:
+        selected = parse_day(day)
+    except ValueError:
+        flash(request, "Data non valida.", "error")
+        return redirect("/")
 
     shown_day = selected or today
     live = shown_day == today
@@ -363,6 +408,7 @@ async def bookings_page(request: Request, day: str | None = None):
             days.append({"date": d, "bookings": day_bookings, "stats": summarize(day_bookings)})
         context.update(days=days, week_stats=summarize(upcoming))
 
+    context["board_version"] = board_state(selected)["version"]
     return render(request, "bookings.html", nav="bookings", **context)
 
 

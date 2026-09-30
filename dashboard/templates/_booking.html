@@ -14,7 +14,7 @@
 
 {% macro arrival(b, today_iso, back, highlight_id=None, show_time=False) %}
 {% set cancelled = b.status == 'cancelled' %}
-<div class="arrival{{ ' is-cancelled' if cancelled }}{{ ' just-saved' if b.id == highlight_id }}" data-booking="{{ b.id }}">
+<div class="arrival{{ ' is-cancelled' if cancelled }}{{ ' just-saved' if b.id == highlight_id }}" data-booking="{{ b.id }}" data-status="{{ b.status }}">
   {{ avatar_badge(b.name) }}
   <p class="arrival-name">{% if show_time %}<span class="arrival-time num">{{ b.time }}</span> {% endif %}{{ b.name }}</p>
   <p class="arrival-people"><strong class="num">{{ b.people }}</strong> {{ 'persona' if b.people == 1 else 'persone' }}</p>
@@ -63,7 +63,7 @@
 </ol>
 {% endif %}
 {% if cancelled %}
-<details class="cancelled-list">
+<details class="cancelled-list" data-key="cancelled-{{ (cancelled | first).date }}">
   <summary>{{ cancelled | length }} {{ 'prenotazione cancellata' if cancelled | length == 1 else 'prenotazioni cancellate' }}</summary>
   {% for b in cancelled %}{{ arrival(b, today_iso, back, show_time=True) }}{% endfor %}
 </details>
